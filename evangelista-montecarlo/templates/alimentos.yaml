@@ -21,6 +21,35 @@ common_variables:
     unit: "unidades/mes"
     typical_range: [500, 5000]
 
+# Configuración para conexión directa a Data Mesh del cliente (Production)
+# Ecosistema: Microsoft Azure / SQL Server
+data_sources:
+  - type: "database"
+    engine: "mssql"  # Dialecto para Microsoft SQL Server
+    host: "servidor-cliente.database.windows.net"
+    port: 1433       # Puerto estándar de SQL Server
+    database: "bodega_datos_cliente"
+    username: "evangelista_sentinel"
+    password: "${DB_PASSWORD}"  # Inyectado por el entorno de ejecución
+    tables:
+      - table: "fact_costos_insumos"
+        date_column: "fecha_registro"
+        value_column: "costo_unitario"
+        maps_to_variable: "precio_harina"
+        filters:
+          insumo_id: "HARINA_001"
+          cliente_id: "${CLIENT_ID}"
+        start_date: "2024-01-01"
+      
+      - table: "fact_costos_insumos"
+        date_column: "fecha_registro"
+        value_column: "costo_unitario"
+        maps_to_variable: "precio_azucar"
+        filters:
+          insumo_id: "AZUCAR_001"
+          cliente_id: "${CLIENT_ID}"
+        start_date: "2024-01-01"    
+
 business_model:
   template: |
     def modelo_alimentos(variables, config):
