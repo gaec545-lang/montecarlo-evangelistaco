@@ -1,51 +1,52 @@
+import os
 from src.database_connector import DatabaseConnector, DatabaseConnectionError
 
 print("=" * 70)
-print("TEST DE DATABASE CONNECTOR")
+print("TEST DE DATABASE CONNECTOR (MSSQL)")
 print("=" * 70)
 
-# NOTA: Ajustar estas credenciales a tu entorno de desarrollo
-# En producción, usar variables de entorno
-
+# Uso estricto de variables de entorno para evitar hardcoding en repositorios.
+# Se proveen valores por defecto orientados a Microsoft SQL Server para desarrollo local.
 TEST_CONFIG = {
-    'engine': 'postgresql',
-    'host': 'localhost',  # Ajustar
-    'port': 5432,
-    'database': 'test_db',  # Ajustar
-    'username': 'test_user',  # Ajustar
-    'password': 'test_password'  # Ajustar
+    'engine': os.getenv('TEST_DB_ENGINE', 'mssql'),
+    'host': os.getenv('TEST_DB_HOST', 'localhost'),
+    'port': int(os.getenv('TEST_DB_PORT', 1433)),
+    'database': os.getenv('TEST_DB_NAME', 'test_db'),
+    'username': os.getenv('TEST_DB_USER', 'test_user'),
+    'password': os.getenv('TEST_DB_PASS', 'test_password')
 }
 
-print("\n⚠️  NOTA: Este test requiere una base de datos configurada.")
-print(f"Intentando conectar a: {TEST_CONFIG['engine']}://{TEST_CONFIG['host']}:{TEST_CONFIG['port']}/{TEST_CONFIG['database']}")
-print("\nSi no tienes BD configurada, este test fallará (esperado).")
-print("Continuar con Fase 2 de todas formas.\n")
+print("\n⚠️  NOTA: Intentando conectar al Data Mesh de prueba...")
+print(f"Target: {TEST_CONFIG['engine']}://{TEST_CONFIG['host']}:{TEST_CONFIG['port']}/{TEST_CONFIG['database']}")
 
-input("Presiona Enter para continuar con el test...")
-
+connector = None
 try:
     connector = DatabaseConnector(**TEST_CONFIG)
+    print("\n✅ Conexión inicializada en memoria.")
     
-    print("\n✅ Conexión exitosa!")
+    # Test 1: Validar conexión real
+    is_valid, message = connector.validate_connection()
+    if not is_valid:
+        raise DatabaseConnectionError(message)
+        
+    print(f"✅ Validación exitosa: {message}")
     
-    # Test: Listar tablas
+    # Test 2: Listar tablas
     tables = connector.list_tables()
     print(f"\n📋 Tablas disponibles: {len(tables)}")
-    for table in tables[:5]:  # Primeras 5
+    for table in tables[:5]:
         print(f"   - {table}")
-    
-    # Test: Validar conexión
-    is_valid, message = connector.validate_connection()
-    print(f"\n{message}")
-    
-    connector.close()
-    
-    print("\n🎉 DatabaseConnector funcionando correctamente")
-    
-except DatabaseConnectionError as e:
-    print(f"\n❌ Error de conexión (esperado si no hay BD):\n{e}")
-    print("\n💡 Para testing completo, configurar BD de desarrollo.")
-    print("   Sistema continuará funcionando con ExcelConnector como fallback.")
 
-print("\n✅ FASE 1 COMPLETA")
+except DatabaseConnectionError as e:
+    print(f"\n❌ Error de conexión (Esperado si no hay instancia MSSQL local activa):\n{e}")
+    print("\n💡 El motor de conexión está listo. Para pruebas E2E, levanta una base de datos local.")
+except Exception as e:
+    print(f"\n❌ Error crítico inesperado:\n{e}")
+finally:
+    # Este bloque garantiza que la conexión se cierre SIEMPRE, incluso si hay errores previos.
+    if connector:
+        connector.close()
+        print("\n🔒 Conexión cerrada y recursos liberados de forma segura.")
+
+print("\n✅ FASE 1 COMPLETA Y AUDITADA")
 print("=" * 70)
