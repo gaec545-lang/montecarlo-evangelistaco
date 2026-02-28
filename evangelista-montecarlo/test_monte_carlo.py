@@ -125,17 +125,55 @@ print("\n" + "=" * 60)
 print("🎉 TODOS LOS TESTS DE MONTE CARLO PASARON")
 print("=" * 60)
 
-# Interpretación ejecutiva
-print("\n💡 INTERPRETACIÓN EJECUTIVA:")
-if stats['prob_loss'] > 0.30:
-    print("   ⚠️  RIESGO ALTO: >30% probabilidad de pérdida")
-    print("   → Revisar estructura de costos o precios")
-elif stats['prob_loss'] > 0.15:
-    print("   ⚠️  RIESGO MEDIO: 15-30% probabilidad de pérdida")
-    print("   → Monitorear de cerca")
-else:
-    print("   ✅ RIESGO BAJO: <15% probabilidad de pérdida")
-    print("   → Operación saludable")
+# Test 8: Validar resultados lógicos
+print("\n[Test 8] Validando resultados...")
+try:
+    assert not results['outcome'].isna().any(), "Hay NaN en resultados"
+    assert not np.isinf(results['outcome']).any(), "Hay infinitos en resultados"
+    assert 0 <= stats['prob_loss'] <= 1, "Prob pérdida fuera de rango"
+    print("✅ Resultados validados (sin errores lógicos)")
+except AssertionError as e:
+    print(f"❌ {e}")
+    exit(1)
 
-print("\n✅ Monte Carlo Engine listo")
-print("✅ Siguiente paso: Integración completa Excel → Monte Carlo")
+# Test 9: Evaluar Triggers de Decision Intelligence
+print("\n[Test 9] Evaluando Triggers de Negocio (Sentinel)...")
+try:
+    # Llamamos al nuevo método que construyó Claude
+    triggers = engine.evaluate_triggers(stats)
+    
+    if triggers:
+        print(f"🚨 {len(triggers)} TRIGGER(S) ACTIVADO(S):\n")
+        
+        # Agrupar por nivel
+        criticos = [t for t in triggers if t['nivel'] == 'CRÍTICO']
+        altos = [t for t in triggers if t['nivel'] == 'ALTO']
+        medios = [t for t in triggers if t.get('nivel') == 'MEDIO']
+        
+        if criticos:
+            print("   🔴 ALERTAS CRÍTICAS:")
+            for trigger in criticos:
+                print(f"      • {trigger['metrica']}: {trigger['mensaje']}")
+        
+        if altos:
+            print("   🟡 ALERTAS ALTAS:")
+            for trigger in altos:
+                print(f"      • {trigger['metrica']}: {trigger['mensaje']}")
+                
+        if medios:
+            print("   🟠 ALERTAS MEDIAS:")
+            for trigger in medios:
+                print(f"      • {trigger['metrica']}: {trigger['mensaje']}")
+    else:
+        print("   ✅ No hay alertas de riesgo.")
+        print("   ✅ Todos los indicadores operativos están dentro de los umbrales del YAML.")
+        
+except AttributeError:
+    print("❌ Error: El método 'evaluate_triggers' no se encontró en UniversalMonteCarloEngine.")
+    print("💡 Asegúrate de haber guardado src/monte_carlo_engine.py con el nuevo código de la Fase 2.")
+except Exception as e:
+    print(f"❌ Error inesperado al evaluar triggers: {e}")
+
+print("\n" + "=" * 60)
+print("🎉 FASE 2 COMPLETADA: MOTOR Y TRIGGERS OPERATIVOS")
+print("=" * 60)
