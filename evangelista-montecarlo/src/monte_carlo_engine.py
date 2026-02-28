@@ -421,3 +421,241 @@ class UniversalMonteCarloEngine:
         df_sens = df_sens.reset_index(drop=True)
         
         return df_sens
+    def evaluate_triggers(self, stats: Dict[str, float]) -> List[Dict[str, Any]]:
+    """
+    Evalúa triggers estocásticos comparando estadísticas vs thresholds de negocio
+    
+    Implementa 3 reglas de Decision Intelligence:
+    1. Riesgo de Pérdida (prob_loss vs critical_loss_prob)
+    2. Volatilidad Operativa (coef. variación vs high_volatility)
+    3. Protección de Margen (P10 vs límites de seguridad)
+    
+    Args:
+        stats: Diccionario de estadísticas de get_statistics()
+        
+    Returns:
+        Lista de alertas con estructura:
+        [
+            {
+                "nivel": str,  # "CRÍTICO", "ALTO", "MEDIO"
+                "metrica": str,
+                "valor_actual": float,
+                "umbral_permitido": float,
+                "mensaje": str,
+                "recomendacion": str  # Opcional
+            }
+        ]
+    
+    Raises:
+        ValueError: Si stats está vacío o mal formado
+    
+    Ejemplo:
+        stats = engine.get_statistics()
+        triggers = engine.evaluate_triggers(stats)
+        
+        for trigger in triggers:
+            if trigger['nivel'] == 'CRÍTICO':
+                # Enviar alerta inmediata a Sentinel
+                notify_critical_alert(trigger)
+    """
+    # Validar input
+    if not stats:
+        raise ValueError("❌ stats no puede estar vacío. Ejecutar get_statistics() primero.")
+    
+    required_keys = ['prob_loss', 'mean', 'std', 'p10']
+    missing = [k for k in required_keys if k not in stats]
+    if missing:
+        raise ValueError(f"❌ stats incompleto. Faltan claves: {missing}")
+    
+    # Extraer thresholds de configuración
+    thresholds = self.config.get('thresholds', {})
+    
+    if not thresholds:
+        logger.warning(
+            "⚠️  No hay 'thresholds' configurados en YAML. "
+            "Usando valores default conservadores."
+        )
+        # Defaults conservadores si no hay configuración
+        thresholds = {
+            'critical_loss_prob': 0.20,  # 20% default
+            'high_volatility': 0.30,      # 30% default
+            'margin_protection': 0.05     # 5% buffer default
+        }
+    
+    alerts: List[Dict[str, Any]] = []
+    
+    # ═══════════════════════════════════════════════════════════════
+    # REGLA 1: RIESGO DE PÉRDIDA (Probabilidad vs Umbral Crítico)
+    # ═══════════════════════════════════════════════════════════════
+    
+    prob_loss = stats['prob_loss']
+    critical_threshold = thresholds.get('critical_loss_prob', 0.25)
+    
+    if prob_loss > critical_threshold:
+        # Calcular magnitud de exceso
+        excess_pct = ((prob_loss - critical_threshold) / critical_threshold) * 100
+        
+        # Clasificar severidad
+        if prob_loss > critical_threshold * 1.5:
+            nivel = "CRÍTICO"
+            mensaje = (
+                f"⛔ RIESGO SISTÉMICO: La probabilidad de pérdida ({prob_loss:.1%}) "
+                f"supera en {excess_pct:.0f}% el umbral crítico del negocio ({critical_threshold:.1%}). "
+                f"Exposición financiera inminente detectada."
+            )
+            recomendacion = (
+                "Acción inmediata requerida: "
+                "1) Revisar estructura de costos fijos. "
+                "2) Renegociar contratos con proveedores clave. "
+                "3) Implementar cobertura financiera (hedging) si es posible."
+            )
+        else:
+            nivel = "ALTO"
+            mensaje = (
+                f"⚠️  ALERTA DE RIESGO: La probabilidad de pérdida ({prob_loss:.1%}) "
+                f"supera el umbral crítico ({critical_threshold:.1%}) por {excess_pct:.0f}%. "
+                f"Margen de seguridad comprometido."
+            )
+            recomendacion = (
+                "Monitoreo intensivo requerido. "
+                "Revisar análisis de sensibilidad para identificar variable con mayor impacto."
+            )
+        
+        alerts.append({
+            'nivel': nivel,
+            'metrica': 'prob_loss',
+            'valor_actual': prob_loss,
+            'umbral_permitido': critical_threshold,
+            'mensaje': mensaje,
+            'recomendacion': recomendacion,
+            'timestamp': pd.Timestamp.now().isoformat()
+        })
+    
+    # ═══════════════════════════════════════════════════════════════
+    # REGLA 2: VOLATILIDAD OPERATIVA (Coeficiente de Variación)
+    # ═══════════════════════════════════════════════════════════════
+    
+    mean = stats['mean']
+    std = stats['std']
+    
+    # Evitar división por cero
+    if mean != 0:
+        coef_variacion = abs(std / mean)
+        volatility_threshold = thresholds.get('high_volatility', 0.35)
+        
+        if coef_variacion > volatility_threshold:
+            # Calcular magnitud
+            excess_pct = ((coef_variacion - volatility_threshold) / volatility_threshold) * 100
+            
+            nivel = "ALTO"
+            mensaje = (
+                f"📊 VOLATILIDAD ELEVADA: El coeficiente de variación ({coef_variacion:.1%}) "
+                f"supera el umbral de estabilidad operativa ({volatility_threshold:.1%}) por {excess_pct:.0f}%. "
+                f"Los resultados muestran dispersión significativa (Desv.Est: ${std:,.0f})."
+            )
+            recomendacion = (
+                "La alta volatilidad indica incertidumbre estructural. "
+                "Considerar: 1) Contratos de largo plazo para estabilizar insumos clave. "
+                "2) Diversificar proveedores. "
+                "3) Mantener reserva de capital equivalente al rango P25-P75."
+            )
+            
+            alerts.append({
+                'nivel': nivel,
+                'metrica': 'coef_variacion',
+                'valor_actual': coef_variacion,
+                'umbral_permitido': volatility_threshold,
+                'mensaje': mensaje,
+                'recomendacion': recomendacion,
+                'contexto': {
+                    'mean': mean,
+                    'std': std,
+                    'rango_probable': f"${stats['p25']:,.0f} - ${stats['p75']:,.0f}"
+                },
+                'timestamp': pd.Timestamp.now().isoformat()
+            })
+    
+    # ═══════════════════════════════════════════════════════════════
+    # REGLA 3: PROTECCIÓN DE MARGEN (P10 Negativo o Límite Crítico)
+    # ═══════════════════════════════════════════════════════════════
+    
+    p10 = stats['p10']
+    margin_protection = thresholds.get('margin_protection', 0.05)
+    
+    # Calcular límite de seguridad como % del revenue esperado
+    # Si P10 está muy cerca de cero o es negativo, hay exposición
+    
+    if p10 < 0:
+        # Pérdida directa en escenario pesimista
+        nivel = "CRÍTICO"
+        mensaje = (
+            f"🔴 EXPOSICIÓN FINANCIERA AGUDA: El percentil pesimista P10 (${p10:,.0f}) "
+            f"es negativo. En el peor 10% de escenarios, el negocio opera con pérdidas directas."
+        )
+        recomendacion = (
+            "URGENTE: El negocio no es sostenible bajo condiciones adversas. "
+            "Acciones: 1) Incrementar precios inmediatamente. "
+            "2) Reducir costos fijos en 15-20%. "
+            "3) Revisar viabilidad del modelo de negocio actual."
+        )
+        
+        alerts.append({
+            'nivel': nivel,
+            'metrica': 'p10',
+            'valor_actual': p10,
+            'umbral_permitido': 0.0,
+            'mensaje': mensaje,
+            'recomendacion': recomendacion,
+            'contexto': {
+                'var_95': stats['var_95'],
+                'cvar_95': stats['cvar_95'],
+                'perdida_maxima_esperada': abs(stats['cvar_95'])
+            },
+            'timestamp': pd.Timestamp.now().isoformat()
+        })
+    
+    elif mean > 0:
+        # Verificar si P10 está muy cerca del break-even (menos del X% del mean)
+        margin_ratio = p10 / mean
+        
+        if margin_ratio < margin_protection:
+            nivel = "MEDIO"
+            mensaje = (
+                f"⚠️  MARGEN DE SEGURIDAD REDUCIDO: El P10 (${p10:,.0f}) representa solo "
+                f"{margin_ratio:.1%} de la ganancia esperada (${mean:,.0f}). "
+                f"Umbral de protección: {margin_protection:.1%}."
+            )
+            recomendacion = (
+                "El margen de seguridad es insuficiente. "
+                "Considerar: 1) Incremento de precios de 3-5%. "
+                "2) Revisión de recetas/procesos para reducir costos variables. "
+                "3) Establecer línea de crédito de emergencia."
+            )
+            
+            alerts.append({
+                'nivel': nivel,
+                'metrica': 'margin_ratio',
+                'valor_actual': margin_ratio,
+                'umbral_permitido': margin_protection,
+                'mensaje': mensaje,
+                'recomendacion': recomendacion,
+                'contexto': {
+                    'p10': p10,
+                    'mean': mean,
+                    'diferencia_absoluta': mean - p10
+                },
+                'timestamp': pd.Timestamp.now().isoformat()
+            })
+    
+    # ═══════════════════════════════════════════════════════════════
+    # LOGGING Y RETORNO
+    # ═══════════════════════════════════════════════════════════════
+    
+    if alerts:
+        logger.warning(f"🚨 {len(alerts)} trigger(s) activado(s)")
+        for alert in alerts:
+            logger.warning(f"   [{alert['nivel']}] {alert['metrica']}: {alert['mensaje'][:80]}...")
+    else:
+        logger.info("✅ Todos los thresholds dentro de parámetros aceptables")
+    
+    return alerts
