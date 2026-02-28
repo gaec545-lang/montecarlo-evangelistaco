@@ -90,4 +90,4 @@ default_distributions:
 thresholds:
   high_volatility: 0.35
   critical_loss_prob: 0.25
-  margin_protection: 0.30
+  margin_protection: 0.05
