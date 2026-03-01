@@ -537,11 +537,8 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 # ═══════════════════════════════════════════════════════════════
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
-
 def main():
-    """Función principal de la aplicación"""
-    def main():
-    # Inyección de estilos corporativos
+    # 1. INYECCIÓN DE ESTILOS CORPORATIVOS (evOlive & evBrown)
     st.markdown(f"""
         <style>
             /* Barra lateral evOliveDark */
@@ -551,18 +548,17 @@ def main():
             }}
             
             /* Títulos en evOlive */
-            h1, h2, h3 {{
+            h1, h2, h3, h4 {{
                 color: #1a1a2e !important;
-                font-family: 'Playfair Display', serif;
             }}
             
-            /* Botones con efecto hover evBrown */
+            /* Botones con estética Evangelista & Co. (evBrown) */
             .stButton>button {{
-                background-color: #1a1a2e;
+                background-color: #11111f;
                 color: #D4AF37;
                 border: 1px solid #D4AF37;
-                border-radius: 0px;
-                transition: all 0.3s;
+                border-radius: 4px;
+                transition: all 0.3s ease;
             }}
             .stButton>button:hover {{
                 background-color: #D4AF37;
@@ -571,12 +567,7 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    # Resto de tu lógica de inicialización
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    # ...
-    
-    # Inicializar session state
+    # 2. INICIALIZAR SESSION STATE
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'role' not in st.session_state:
@@ -595,8 +586,8 @@ def main():
     
     with st.sidebar:
         st.markdown(f"""
-            <h3 style='color: #1f77b4;'>Sentinel Dashboard</h3>
-            <p style='color: #666;'>Decision Intelligence Platform</p>
+            <h3 style='color: #D4AF37;'>Sentinel Dashboard</h3>
+            <p style='color: #FFFFFF;'>Decision Intelligence Platform</p>
         """, unsafe_allow_html=True)
         
         st.markdown("---")
@@ -650,7 +641,6 @@ def main():
     
     else:
         st.error("❌ Rol no reconocido")
-
 
 # ═══════════════════════════════════════════════════════════════
 # ENTRY POINT
