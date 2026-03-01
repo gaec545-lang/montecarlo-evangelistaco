@@ -187,18 +187,13 @@ def render_distribution_chart(results: pd.DataFrame, stats: Dict):
 # ═══════════════════════════════════════════════════════════════
 
 def login_page():
-    """Página de login con roles estáticos"""
+    # Centrar el logo en el login
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("evangelista-montecarlo/app/assets/logoEvangelistaCo.png", use_container_width=True)
     
-    st.markdown("""
-        <h1 style='text-align: center; color: #1f77b4;'>
-            🔐 Sentinel - Decision Intelligence
-        </h1>
-        <h3 style='text-align: center; color: #666;'>
-            Evangelista & Co.
-        </h3>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
+    st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
+    # ... resto de la lógica de login
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -538,29 +533,36 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 def main():
-    # 1. ESTILOS REFINADOS (Contraste mejorado)
+    # CSS con contraste mejorado para evitar que el texto se pierda
     st.markdown(f"""
         <style>
-            /* Fondo de la app (Blanco hueso para suavizar la vista) */
+            /* Fondo principal: Gris seda para suavizar la vista */
             .stApp {{
-                background-color: #FAFAFA;
+                background-color: #F8F9FA;
             }}
             
-            /* Sidebar: Fondo oscuro con letras doradas de alto contraste */
+            /* Sidebar: evOliveDark con texto en Blanco/Oro */
             [data-testid="stSidebar"] {{
                 background-color: #11111f;
+            }}
+            
+            /* Color de los textos en el Sidebar para legibilidad */
+            [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span {{
+                color: #FFFFFF !important;
+            }}
+            
+            /* Títulos principales: evOlive (un azul muy profundo pero distinguible) */
+            h1, h2, h3 {{
+                color: #1A1A2E !important;
+                font-weight: 800;
+            }}
+
+            /* Botones: evBrown (Oro) */
+            .stButton>button {{
+                background-color: #11111f;
                 color: #D4AF37;
-            }}
-            
-            /* Títulos: Usamos evOlive con un poco más de luz para que no parezca negro puro */
-            h1, h2, h3, h4 {{
-                color: #1a1a2e !important; 
-                font-weight: 700;
-            }}
-            
-            /* Texto general y métricas */
-            [data-testid="stMetricValue"], .stMarkdown p {{
-                color: #2c2c2c; /* Gris muy oscuro, pero no negro, para legibilidad */
+                border: 2px solid #D4AF37;
+                border-radius: 5px;
             }}
         </style>
     """, unsafe_allow_html=True)
@@ -582,13 +584,12 @@ def main():
     # SIDEBAR (COMÚN PARA AMBOS ROLES)
     # ═══════════════════════════════════════════════════════════
     
-    with st.sidebar:
-        st.markdown(f"""
-            <h3 style='color: #D4AF37;'>Sentinel Dashboard</h3>
-            <p style='color: #FFFFFF;'>Decision Intelligence Platform</p>
-        """, unsafe_allow_html=True)
-        
+   with st.sidebar:
+        # Sustitución del emoji de candado por el logo oficial
+        st.image("evangelista-montecarlo/app/assets/logoEvangelistaCo.png", use_container_width=True)
+        st.markdown("<h3 style='text-align: center; color: #D4AF37;'>Sentinel</h3>", unsafe_allow_html=True)
         st.markdown("---")
+        # ... resto de los elementos del sidebar
         
         # Info del usuario
         role_emoji = "👔" if st.session_state.role == "Ejecutivo" else "🔬"
