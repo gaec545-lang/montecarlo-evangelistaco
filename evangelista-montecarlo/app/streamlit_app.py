@@ -538,38 +538,29 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 def main():
-    """Función principal de la aplicación"""
-    
-    # 1. INSERTA ESTE BLOQUE AQUÍ (Mantén los 4 espacios de sangría)
+    # 1. ESTILOS REFINADOS (Contraste mejorado)
     st.markdown(f"""
         <style>
-            /* Barra lateral evOliveDark */
+            /* Fondo de la app (Blanco hueso para suavizar la vista) */
+            .stApp {{
+                background-color: #FAFAFA;
+            }}
+            
+            /* Sidebar: Fondo oscuro con letras doradas de alto contraste */
             [data-testid="stSidebar"] {{
                 background-color: #11111f;
-                color: #FFFFFF;
-            }}
-            
-            /* Títulos en evOlive */
-            h1, h2, h3, h4 {{
-                color: #1a1a2e !important;
-            }}
-            
-            /* Botones con estética Evangelista & Co. (evBrown) */
-            .stButton>button {{
-                background-color: #11111f;
                 color: #D4AF37;
-                border: 1px solid #D4AF37;
-                border-radius: 4px;
-                transition: all 0.3s ease;
             }}
-            .stButton>button:hover {{
-                background-color: #D4AF37;
-                color: #11111f;
+            
+            /* Títulos: Usamos evOlive con un poco más de luz para que no parezca negro puro */
+            h1, h2, h3, h4 {{
+                color: #1a1a2e !important; 
+                font-weight: 700;
             }}
-
-            /* Ajuste de texto en métricas para legibilidad */
-            [data-testid="stMetricValue"] {{
-                color: #1a1a2e;
+            
+            /* Texto general y métricas */
+            [data-testid="stMetricValue"], .stMarkdown p {{
+                color: #2c2c2c; /* Gris muy oscuro, pero no negro, para legibilidad */
             }}
         </style>
     """, unsafe_allow_html=True)
