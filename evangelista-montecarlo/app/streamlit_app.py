@@ -187,19 +187,18 @@ def render_distribution_chart(results: pd.DataFrame, stats: Dict):
 # ═══════════════════════════════════════════════════════════════
 
 def login_page():
-    with col2:
-    st.image("assets/logoEvangelistaCo.png", use_container_width=True)
-    
-    st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
-    # ... resto de la lógica de login
-    
+    """Página de login con Branding de Evangelista & Co."""
+    # 1. Definimos las columnas PRIMERO
     col1, col2, col3 = st.columns([1, 2, 1])
     
+    # 2. Usamos la columna central para el logo y el título
     with col2:
+        st.image("assets/logoEvangelistaCo.png", use_container_width=True)
+        st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
+        st.markdown("---")
         st.subheader("Autenticación")
         
         # Credenciales estáticas (PoC)
-        # En producción: integrar con Auth0, Azure AD, etc.
         USUARIOS = {
             'ejecutivo': {'password': 'cliente123', 'role': 'Ejecutivo', 'nombre': 'Juan Pérez (CEO)'},
             'consultor': {'password': 'evangelista123', 'role': 'Consultor', 'nombre': 'Analista Evangelista'}
@@ -222,18 +221,7 @@ def login_page():
         
         with col_btn2:
             if st.button("ℹ️ Ver Credenciales Demo", use_container_width=True):
-                st.info("""
-                    **Credenciales de Demo:**
-                    
-                    **Ejecutivo (Cliente):**
-                    - Usuario: `ejecutivo`
-                    - Contraseña: `cliente123`
-                    
-                    **Consultor (Evangelista & Co.):**
-                    - Usuario: `consultor`
-                    - Contraseña: `evangelista123`
-                """)
-
+                st.info("**Demo:** ejecutivo/cliente123 o consultor/evangelista123")
 
 # ═══════════════════════════════════════════════════════════════
 # VISTA EJECUTIVO (CLIENTE)
