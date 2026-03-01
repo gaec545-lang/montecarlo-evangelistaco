@@ -189,14 +189,14 @@ def render_distribution_chart(results: pd.DataFrame, stats: Dict):
 def login_page():
     """Página de login con Branding de Evangelista & Co."""
     
-    # 1. Definimos las columnas PRIMERO para centrar el contenido
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # 1. Definimos las columnas PRIMERO
+    col1, col2, col3 = st.columns([1, 1, 1])
     
     with col2:
-        # Ajustamos el tamaño con 'width' (250px es un buen tamaño para el login)
-        st.image("assets/logoEvangelistaCo.png", width=250)
+        # Centramos el logo manualmente con columnas y eliminamos el ajuste automático de ancho
+        st.image("assets/logoEvangelistaCo.png", width=200) 
         
-        st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #1A1A2E;'>Portal de Socios</h2>", unsafe_allow_html=True)
         st.markdown("---")
         st.subheader("Autenticación")
         
@@ -207,23 +207,16 @@ def login_page():
         }
         
         username = st.text_input("Usuario", placeholder="ejecutivo o consultor")
-        password = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña")
+        password = st.text_input("Contraseña", type="password")
         
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            if st.button("🔓 Iniciar Sesión", use_container_width=True):
-                if username in USUARIOS and password == USUARIOS[username]['password']:
-                    st.session_state.authenticated = True
-                    st.session_state.role = USUARIOS[username]['role']
-                    st.session_state.username = USUARIOS[username]['nombre']
-                    st.rerun()
-                else:
-                    st.error("❌ Credenciales inválidas")
-        
-        with col_btn2:
-            if st.button("ℹ️ Ver Credenciales Demo", use_container_width=True):
-                st.info("**Demo:** ejecutivo/cliente123 o consultor/evangelista123")
+        if st.button("🔓 Iniciar Sesión", use_container_width=True):
+            if username in USUARIOS and password == USUARIOS[username]['password']:
+                st.session_state.authenticated = True
+                st.session_state.role = USUARIOS[username]['role']
+                st.session_state.username = USUARIOS[username]['nombre']
+                st.rerun()
+            else:
+                st.error("❌ Credenciales inválidas")
 
 # ═══════════════════════════════════════════════════════════════
 # VISTA EJECUTIVO (CLIENTE)
@@ -521,20 +514,38 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 def main():
-    """Función principal de la aplicación con Branding de Evangelista & Co."""
-    
-    # 1. INYECCIÓN DE ESTILOS CORPORATIVOS
+    # Estilos corregidos para Máximo Contraste y Legibilidad
     st.markdown(f"""
         <style>
-            .stApp {{ background-color: #F8F9FA; }}
-            [data-testid="stSidebar"] {{ background-color: #11111f; color: #FFFFFF; }}
-            [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span {{ color: #FFFFFF !important; }}
-            h1, h2, h3, h4 {{ color: #1A1A2E !important; font-weight: 800; }}
+            /* Fondo de la app: Blanco puro para que las gráficas resalten */
+            .stApp {{
+                background-color: #FFFFFF;
+            }}
+            
+            /* Sidebar: evOliveDark con texto blanco */
+            [data-testid="stSidebar"] {{
+                background-color: #11111f;
+            }}
+            [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span {{
+                color: #FFFFFF !important;
+            }}
+            
+            /* Forzar texto oscuro en TODA el área blanca (Métricas, Markdown, Etiquetas) */
+            .stMarkdown, p, span, label, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {{
+                color: #1A1A2E !important;
+            }}
+            
+            /* Títulos en evOlive con peso extra */
+            h1, h2, h3, h4 {{
+                color: #1A1A2E !important;
+                font-weight: 800 !important;
+            }}
+
+            /* Botones: evBrown (Oro) */
             .stButton>button {{
                 background-color: #11111f;
                 color: #D4AF37;
                 border: 2px solid #D4AF37;
-                border-radius: 5px;
             }}
         </style>
     """, unsafe_allow_html=True)
