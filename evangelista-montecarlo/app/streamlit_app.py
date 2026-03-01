@@ -533,31 +533,15 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 def main():
-    # CSS con contraste mejorado para evitar que el texto se pierda
+    """Función principal de la aplicación con Branding de Evangelista & Co."""
+    
+    # 1. INYECCIÓN DE ESTILOS CORPORATIVOS
     st.markdown(f"""
         <style>
-            /* Fondo principal: Gris seda para suavizar la vista */
-            .stApp {{
-                background-color: #F8F9FA;
-            }}
-            
-            /* Sidebar: evOliveDark con texto en Blanco/Oro */
-            [data-testid="stSidebar"] {{
-                background-color: #11111f;
-            }}
-            
-            /* Color de los textos en el Sidebar para legibilidad */
-            [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span {{
-                color: #FFFFFF !important;
-            }}
-            
-            /* Títulos principales: evOlive (un azul muy profundo pero distinguible) */
-            h1, h2, h3 {{
-                color: #1A1A2E !important;
-                font-weight: 800;
-            }}
-
-            /* Botones: evBrown (Oro) */
+            .stApp {{ background-color: #F8F9FA; }}
+            [data-testid="stSidebar"] {{ background-color: #11111f; color: #FFFFFF; }}
+            [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span {{ color: #FFFFFF !important; }}
+            h1, h2, h3, h4 {{ color: #1A1A2E !important; font-weight: 800; }}
             .stButton>button {{
                 background-color: #11111f;
                 color: #D4AF37;
@@ -567,7 +551,7 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    # 2. INICIALIZAR SESSION STATE
+    # Inicializar session state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'role' not in st.session_state:
@@ -583,19 +567,19 @@ def main():
     # ═══════════════════════════════════════════════════════════
     # SIDEBAR (COMÚN PARA AMBOS ROLES)
     # ═══════════════════════════════════════════════════════════
-    
-   with st.sidebar:
-        # Sustitución del emoji de candado por el logo oficial
+    with st.sidebar:
+        # Incorporación del logo en lugar del emoji
         st.image("evangelista-montecarlo/app/assets/logoEvangelistaCo.png", use_container_width=True)
         st.markdown("<h3 style='text-align: center; color: #D4AF37;'>Sentinel</h3>", unsafe_allow_html=True)
-        st.markdown("---")
-        # ... resto de los elementos del sidebar
         
-        # Botón de cerrar sesión
+        st.markdown("---")
+        
+        role_emoji = "👔" if st.session_state.role == "Ejecutivo" else "🔬"
+        st.info(f"**Usuario:** {st.session_state.username}\n**Rol:** {role_emoji} {st.session_state.role}")
+        
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
             st.session_state.authenticated = False
             st.session_state.role = None
-            st.session_state.username = None
             st.rerun()
         
         st.markdown("---")
