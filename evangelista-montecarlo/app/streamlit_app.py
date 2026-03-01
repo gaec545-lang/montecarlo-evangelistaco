@@ -187,10 +187,7 @@ def render_distribution_chart(results: pd.DataFrame, stats: Dict):
 # ═══════════════════════════════════════════════════════════════
 
 def login_page():
-    # Centrar el logo en el login
-    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Busca esta línea en login_page
     st.image("assets/logoEvangelistaCo.png", use_container_width=True)
     
     st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
