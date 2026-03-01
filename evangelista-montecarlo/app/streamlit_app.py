@@ -540,6 +540,41 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 
 def main():
     """Función principal de la aplicación"""
+    def main():
+    # Inyección de estilos corporativos
+    st.markdown(f"""
+        <style>
+            /* Barra lateral evOliveDark */
+            [data-testid="stSidebar"] {{
+                background-color: #11111f;
+                color: #FFFFFF;
+            }}
+            
+            /* Títulos en evOlive */
+            h1, h2, h3 {{
+                color: #1a1a2e !important;
+                font-family: 'Playfair Display', serif;
+            }}
+            
+            /* Botones con efecto hover evBrown */
+            .stButton>button {{
+                background-color: #1a1a2e;
+                color: #D4AF37;
+                border: 1px solid #D4AF37;
+                border-radius: 0px;
+                transition: all 0.3s;
+            }}
+            .stButton>button:hover {{
+                background-color: #D4AF37;
+                color: #11111f;
+            }}
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Resto de tu lógica de inicialización
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    # ...
     
     # Inicializar session state
     if 'authenticated' not in st.session_state:
