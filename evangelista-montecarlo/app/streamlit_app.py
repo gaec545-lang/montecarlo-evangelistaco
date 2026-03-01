@@ -188,17 +188,20 @@ def render_distribution_chart(results: pd.DataFrame, stats: Dict):
 
 def login_page():
     """Página de login con Branding de Evangelista & Co."""
-    # 1. Definimos las columnas PRIMERO
+    
+    # 1. Definimos las columnas PRIMERO para poder usarlas
     col1, col2, col3 = st.columns([1, 2, 1])
     
-    # 2. Usamos la columna central para el logo y el título
+    # 2. Ahora abrimos el bloque 'with' y todo lo de adentro debe llevar 4 espacios extra
     with col2:
+        # Esta línea ahora sí está bien indentada y col2 ya existe
         st.image("assets/logoEvangelistaCo.png", use_container_width=True)
+        
         st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
         st.markdown("---")
         st.subheader("Autenticación")
         
-        # Credenciales estáticas (PoC)
+        # Credenciales estáticas para la fase actual (PoC)
         USUARIOS = {
             'ejecutivo': {'password': 'cliente123', 'role': 'Ejecutivo', 'nombre': 'Juan Pérez (CEO)'},
             'consultor': {'password': 'evangelista123', 'role': 'Consultor', 'nombre': 'Analista Evangelista'}
