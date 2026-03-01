@@ -190,7 +190,8 @@ def login_page():
     # Centrar el logo en el login
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("evangelista-montecarlo/app/assets/logoEvangelistaCo.png", use_container_width=True)
+        # Busca esta línea en login_page
+    st.image("assets/logoEvangelistaCo.png", use_container_width=True)
     
     st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
     # ... resto de la lógica de login
@@ -569,7 +570,7 @@ def main():
     # ═══════════════════════════════════════════════════════════
     with st.sidebar:
         # Incorporación del logo en lugar del emoji
-        st.image("evangelista-montecarlo/app/assets/logoEvangelistaCo.png", use_container_width=True)
+        st.image("assets/logoEvangelistaCo.png", use_container_width=True)
         st.markdown("<h3 style='text-align: center; color: #D4AF37;'>Sentinel</h3>", unsafe_allow_html=True)
         
         st.markdown("---")
