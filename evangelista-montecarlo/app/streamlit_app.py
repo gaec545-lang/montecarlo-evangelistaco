@@ -538,7 +538,9 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 def main():
-    # 1. INYECCIÓN DE ESTILOS CORPORATIVOS (evOlive & evBrown)
+    """Función principal de la aplicación"""
+    
+    # 1. INSERTA ESTE BLOQUE AQUÍ (Mantén los 4 espacios de sangría)
     st.markdown(f"""
         <style>
             /* Barra lateral evOliveDark */
@@ -563,6 +565,11 @@ def main():
             .stButton>button:hover {{
                 background-color: #D4AF37;
                 color: #11111f;
+            }}
+
+            /* Ajuste de texto en métricas para legibilidad */
+            [data-testid="stMetricValue"] {{
+                color: #1a1a2e;
             }}
         </style>
     """, unsafe_allow_html=True)
