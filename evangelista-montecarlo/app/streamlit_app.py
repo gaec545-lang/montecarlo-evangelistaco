@@ -591,15 +591,6 @@ def main():
         st.markdown("---")
         # ... resto de los elementos del sidebar
         
-        # Info del usuario
-        role_emoji = "👔" if st.session_state.role == "Ejecutivo" else "🔬"
-        st.info(f"""
-            **Usuario:** {st.session_state.username}  
-            **Rol:** {role_emoji} {st.session_state.role}
-        """)
-        
-        st.markdown("---")
-        
         # Botón de cerrar sesión
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
             st.session_state.authenticated = False
