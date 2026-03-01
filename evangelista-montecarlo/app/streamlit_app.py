@@ -189,19 +189,18 @@ def render_distribution_chart(results: pd.DataFrame, stats: Dict):
 def login_page():
     """Página de login con Branding de Evangelista & Co."""
     
-    # 1. Definimos las columnas PRIMERO para poder usarlas
+    # 1. Definimos las columnas PRIMERO para centrar el contenido
     col1, col2, col3 = st.columns([1, 2, 1])
     
-    # 2. Ahora abrimos el bloque 'with' y todo lo de adentro debe llevar 4 espacios extra
     with col2:
-        # Esta línea ahora sí está bien indentada y col2 ya existe
-        st.image("assets/logoEvangelistaCo.png", use_container_width=True)
+        # Ajustamos el tamaño con 'width' (250px es un buen tamaño para el login)
+        st.image("assets/logoEvangelistaCo.png", width=250)
         
         st.markdown("<h2 style='text-align: center;'>Portal de Socios</h2>", unsafe_allow_html=True)
         st.markdown("---")
         st.subheader("Autenticación")
         
-        # Credenciales estáticas para la fase actual (PoC)
+        # Credenciales estáticas (PoC)
         USUARIOS = {
             'ejecutivo': {'password': 'cliente123', 'role': 'Ejecutivo', 'nombre': 'Juan Pérez (CEO)'},
             'consultor': {'password': 'evangelista123', 'role': 'Consultor', 'nombre': 'Analista Evangelista'}
@@ -557,8 +556,8 @@ def main():
     # SIDEBAR (COMÚN PARA AMBOS ROLES)
     # ═══════════════════════════════════════════════════════════
     with st.sidebar:
-        # Incorporación del logo en lugar del emoji
-        st.image("assets/logoEvangelistaCo.png", use_container_width=True)
+        # Ajustamos el tamaño a 180px para que se vea profesional en la barra
+        st.image("assets/logoEvangelistaCo.png", width=180)
         st.markdown("<h3 style='text-align: center; color: #D4AF37;'>Sentinel</h3>", unsafe_allow_html=True)
         
         st.markdown("---")
