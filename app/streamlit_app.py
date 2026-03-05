@@ -255,15 +255,14 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 
 def main():
     st.markdown("""
+        st.markdown("""
         <style>
-            .stApp { background-color: #FFFFFF; }
-            [data-testid="stSidebar"] { background-color: #11111f; }
-            [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span { color: #FFFFFF !important; }
-            .stMarkdown, p, span, label, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #1A1A2E !important; }
-            h1, h2, h3, h4 { color: #1A1A2E !important; font-weight: 800 !important; }
-            .stButton>button { background-color: #11111f; color: #D4AF37; border: 2px solid #D4AF37; }
+            /* Solo ocultamos el menú genérico y estilizamos botones, el motor nativo hace el resto */
             [data-testid="stSidebarNav"] {display: none !important;}
+            .stButton>button { border: 1px solid #D4AF37; background-color: transparent; }
+            .stButton>button:hover { border: 1px solid #1A1A2E; color: #1A1A2E; }
         </style>
+                                    
     """, unsafe_allow_html=True)
     
     if 'authenticated' not in st.session_state:
