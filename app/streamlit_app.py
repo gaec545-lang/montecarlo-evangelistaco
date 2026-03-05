@@ -30,10 +30,10 @@ st.set_page_config(
 # ═══════════════════════════════════════════════════════════════
 
 @st.cache_resource
-def load_pipeline():
+def load_pipeline(client_file: str):
     config = ConfigurationManager(
         template='configs/templates/alimentos.yaml',
-        client_config='configs/clients/test_pasteleria_config.yaml'
+        client_config=f'configs/clients/{client_file}'
     )
     
     try:
@@ -50,7 +50,7 @@ def load_pipeline():
     
     pipeline = DecisionPipeline(config, supabase_creds)
     return pipeline, config
-
+    
 @st.cache_data
 def run_pipeline(_pipeline):
     return _pipeline.execute()
@@ -298,6 +298,21 @@ def main():
             st.session_state.role = None
             st.rerun()
             
+        st.markdown("---")
+        
+        # --- NUEVO: SELECTOR DINÁMICO DE CLIENTES ---
+        st.markdown("**🏢 Portafolio de Clientes:**")
+        import os
+        try:
+            client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
+            if not client_files:
+                client_files = ['test_pasteleria_config.yaml']
+        except FileNotFoundError:
+            client_files = ['test_pasteleria_config.yaml']
+
+        selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
+        # ---------------------------------------------
+        
         st.markdown("---")
         st.markdown("**⚙️ Configuración:**")
         st.caption("• Pipeline: 4 Fases")
