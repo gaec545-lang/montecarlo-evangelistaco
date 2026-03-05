@@ -321,18 +321,20 @@ def main():
         st.markdown("---")
         st.caption("© 2026 Evangelista & Co.")
     
-    with st.spinner("⚙️ Inicializando Decision Pipeline..."):
-        pipeline, config = load_pipeline()
     
+        
     with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client_file}..."):
         pipeline, config = load_pipeline(selected_client_file)
+    
+    with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (4 Fases)..."):
+        pipeline_results = run_pipeline(pipeline)
         
         results = pipeline_results['simulation_results']
         stats = pipeline_results['statistics']
         sensitivity = pipeline_results['sensitivity']
         business_narrative = pipeline_results['business_narrative']
         recommendations = pipeline_results['recommendations']
-        triggers = [] 
+        triggers = []
         
     if st.session_state.role == "Ejecutivo":
         vista_ejecutivo(stats, triggers, results, config)
