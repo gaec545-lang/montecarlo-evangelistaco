@@ -1,0 +1,12 @@
+# Ignorar secretos de Streamlit (Bóveda local)
+.streamlit/secrets.toml
+
+# Ignorar datos de clientes generados localmente
+configs/clients/*
+
+# Ignorar archivos compilados de Python (Basura temporal)
+__pycache__/
+*.pyc
+
+# Ignorar archivos de sistema operativo
+.DS_Store
