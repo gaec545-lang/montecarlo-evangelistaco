@@ -14,7 +14,6 @@ st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 st.markdown("""
     <style>
         [data-testid="stSidebarNav"] {display: none !important;}
-        [data-testid="stSidebar"] { background-color: #11111f; }
     </style>
 """, unsafe_allow_html=True)
 
