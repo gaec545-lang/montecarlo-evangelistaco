@@ -19,7 +19,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.page_link("app/streamlit_app.py", label="⬅️ Volver al Dashboard Master")
+    st.page_link("streamlit_app.py", label="⬅️ Volver al Dashboard Master")
 
 # Verificación estricta de seguridad
 if not st.session_state.get('authenticated'):
