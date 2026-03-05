@@ -142,7 +142,27 @@ with tabs[1]:
                     st.success(f"✅ Modelo parametrizado exitosamente. Archivo guardado en: `{file_path}`")
                 except Exception as e:
                     st.error(f"❌ Error crítico al escribir en el disco: {e}")
-                    
+         st.markdown("---")
+    st.subheader("📁 Modelos Financieros Compilados")
+    try:
+        client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
+        yaml_data = []
+        for f in client_files:
+            with open(os.path.join('configs/clients', f), 'r') as file:
+                data = yaml.safe_load(file)
+                yaml_data.append({
+                    "Archivo": f,
+                    "Client ID": data.get('client', {}).get('id', 'N/A'),
+                    "Empresa": data.get('client', {}).get('name', 'N/A'),
+                    "Sector": data.get('client', {}).get('industry', 'N/A'),
+                    "Simulaciones": data.get('simulation', {}).get('iterations', 0)
+                })
+        if yaml_data:
+            st.dataframe(pd.DataFrame(yaml_data), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay modelos parametrizados en el directorio.")
+    except Exception as e:
+        st.error("Error al leer el directorio de clientes.")           
 # ═══════════════════════════════════════════════════════════════
 # TAB 3: USUARIOS
 # ═══════════════════════════════════════════════════════════════
@@ -179,3 +199,30 @@ with tabs[2]:
                         st.error("❌ El usuario ya existe en la bóveda.")
                 except ValueError as ve:
                     st.error(f"❌ {ve}")
+          st.markdown("---")
+    st.subheader("🗃️ Directorio y Control de Accesos")
+    from src.user_manager import UserManager
+    um = UserManager()
+    users = um.get_all_users()
+    
+    if users:
+        df_users = pd.DataFrame(users)
+        # Formateo visual para el administrador
+        df_visual = df_users[['username', 'nombre_completo', 'role', 'client_id', 'is_active', 'created_at']].copy()
+        df_visual['is_active'] = df_visual['is_active'].apply(lambda x: "🟢 Activo" if x else "🔴 Bloqueado")
+        st.dataframe(df_visual, use_container_width=True, hide_index=True)
+        
+        st.markdown("**⚡ Acciones Ejecutivas**")
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            user_to_toggle = st.selectbox("Seleccionar usuario para Bloquear/Desbloquear:", [u['username'] for u in users if u['username'] != st.session_state.username])
+            if st.button("🔄 Cambiar Status (Switch)"):
+                new_status = um.toggle_user_status(user_to_toggle)
+                st.success(f"✅ Status actualizado.")
+                st.rerun()
+        with col_act2:
+            user_to_delete = st.selectbox("Seleccionar usuario a Eliminar:", [u['username'] for u in users if u['username'] != st.session_state.username])
+            if st.button("🗑️ Eliminar Definitivamente"):
+                um.delete_user(user_to_delete)
+                st.success(f"✅ Usuario {user_to_delete} purgado del sistema.")
+                st.rerun()
