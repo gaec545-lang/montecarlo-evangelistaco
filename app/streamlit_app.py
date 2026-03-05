@@ -324,8 +324,8 @@ def main():
     with st.spinner("⚙️ Inicializando Decision Pipeline..."):
         pipeline, config = load_pipeline()
     
-    with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (4 Fases)..."):
-        pipeline_results = run_pipeline(pipeline)
+    with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client_file}..."):
+        pipeline, config = load_pipeline(selected_client_file)
         
         results = pipeline_results['simulation_results']
         stats = pipeline_results['statistics']
