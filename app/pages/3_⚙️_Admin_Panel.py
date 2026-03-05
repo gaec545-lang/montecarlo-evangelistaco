@@ -10,10 +10,18 @@ from src.connection_manager import ConnectionManager
 
 st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 
-# Ocultar menú nativo y crear botón de regreso
+# Ocultar menú nativo y forzar alto contraste en el panel lateral
 st.markdown("""
     <style>
         [data-testid="stSidebarNav"] {display: none !important;}
+        
+        /* INYECCIÓN DE ALTO CONTRASTE PARA EL PANEL LATERAL */
+        [data-testid="stSidebar"] p, 
+        [data-testid="stSidebar"] span, 
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] div { 
+            color: #FFFFFF !important; 
+        }
     </style>
 """, unsafe_allow_html=True)
 
