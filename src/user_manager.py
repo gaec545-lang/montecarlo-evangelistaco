@@ -29,6 +29,7 @@ class User:
     created_by: Optional[str]
     failed_attempts: int = 0
     locked_until: Optional[str] = None
+    client_id: Optional[str] = None  # <--- INYECCIÓN CLAVE (Atadura al cliente)
 
 class UserManager:
     def __init__(self, config_path: str = 'configs/users.yaml'):
@@ -36,35 +37,36 @@ class UserManager:
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
         self._ensure_file_exists()
 
-    def _ensure_file_exists(self):
-        if not os.path.exists(self.config_path):
-            with open(self.config_path, 'w') as file:
-                yaml.dump({'users': []}, file)
-
-    def _load_users(self) -> dict:
-        with open(self.config_path, 'r') as file:
-            return yaml.safe_load(file) or {'users': []}
-
-    def _save_users(self, data: dict):
-        with open(self.config_path, 'w') as file:
-            yaml.dump(data, file, default_flow_style=False)
-
-    def _validate_password_complexity(self, password: str) -> bool:
-        """Exige rigor: 8 chars, 1 mayúscula, 1 minúscula, 1 número."""
-        if len(password) < 8: return False
-        if not re.search(r"[A-Z]", password): return False
-        if not re.search(r"[a-z]", password): return False
-        if not re.search(r"[0-9]", password): return False
+    def create_user(self, username, password, role, nombre_completo, email, created_by, client_id=None) -> bool:
+        data = self._load_users()
+        if any(u['username'] == username for u in data['users']):
+            return False # El usuario ya existe
+        
+        if not self._validate_password_complexity(password):
+            raise ValueError("La contraseña exige 8 caracteres, 1 mayúscula, 1 minúscula y 1 número.")
+            
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+        
+        new_user = User(
+            username=username,
+            password_hash=hashed_password,
+            role=role,
+            nombre_completo=nombre_completo,
+            email=email,
+            created_at=datetime.now().isoformat(),
+            last_login=None,
+            is_active=True,
+            created_by=created_by,
+            client_id=client_id
+        )
+        
+        data['users'].append(asdict(new_user))
+        self._save_users(data)
+        logging.info(f"USER_CREATED | user={username} | role={role} | client_id={client_id}")
         return True
 
-    def authenticate(self, username: str, password: str, ip: str = "unknown") -> Optional[User]:
-        data = self._load_users()
-        user_idx, user_data = next(((i, u) for i, u in enumerate(data['users']) if u['username'] == username), (None, None))
-
-        if not user_data:
-            logging.warning(f"LOGIN_FAILED | user={username} | reason=user_not_found | ip={ip}")
-            return None
-
+    # ... (Mantén intactos tus métodos _ensure_file_exists, _load_users, _save_users, _validate_password_complexity y authenticate) ...
         user = User(**user_data)
 
         # Validación de bloqueo (Rate Limiting)
