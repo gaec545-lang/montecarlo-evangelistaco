@@ -150,6 +150,7 @@ def login_page():
                 st.session_state.role = user.role
                 st.session_state.username = user.nombre_completo
                 st.session_state.user_email = user.email
+                st.session_state.client_id = getattr(user, 'client_id', None)  # <--- NUEVO
                 st.session_state.last_activity = datetime.now().isoformat()
                 st.rerun()
             else:
@@ -314,18 +315,29 @@ def main():
         selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
         # ---------------------------------------------
 
-        # --- NAVEGACIÓN PRIVADA (SOLO EVANGELISTA & CO.) ---
         if st.session_state.role in ["Consultor", "Admin"]:
             st.markdown("---")
             st.page_link("pages/3_⚙️_Admin_Panel.py", label="Panel de Administración", icon="⚙️")
-        # ----------------------------------------------------
-        st.markdown("---")
-        st.markdown("**⚙️ Configuración:**")
-        st.caption("• Pipeline: 4 Fases")
-        st.caption("• Simulaciones: 10,000")
-        st.caption("• Motor: Decision Intelligence")
-        st.markdown("---")
-        st.caption("© 2026 Evangelista & Co.")
+            st.markdown("---")
+            
+            # --- SELECTOR DE CONSULTOR (VISTA PANÓPTICA) ---
+            st.markdown("**🏢 Portafolio de Clientes:**")
+            import os
+            try:
+                client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
+                if not client_files:
+                    client_files = ['test_pasteleria_config.yaml']
+            except FileNotFoundError:
+                client_files = ['test_pasteleria_config.yaml']
+
+            selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
+        else:
+            # --- VISTA ESTRICTA DE EJECUTIVO (AISLADA) ---
+            st.markdown("---")
+            st.markdown("**🏢 Panel de Cliente:**")
+            client_id = st.session_state.get('client_id', 'Desconocido')
+            st.info(f"ID: {client_id}")
+            selected_client_file = f"{client_id}_config.yaml"
     
     
         
