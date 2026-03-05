@@ -22,6 +22,19 @@ st.markdown("""
         [data-testid="stSidebar"] div { 
             color: #FFFFFF !important; 
         }
+
+        /* CORRECCIÓN DE CAJAS DE TEXTO (Forzar Blanco y Texto Oscuro) */
+        div[data-baseweb="base-input"], 
+        div[data-baseweb="select"] > div {
+            background-color: #FFFFFF !important;
+            border: 1px solid #D4AF37 !important;
+            border-radius: 4px;
+        }
+        div[data-baseweb="base-input"] input,
+        div[data-baseweb="select"] div {
+            color: #1A1A2E !important;
+            -webkit-text-fill-color: #1A1A2E !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
