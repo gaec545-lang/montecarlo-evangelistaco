@@ -3,6 +3,7 @@ import yaml
 import os
 import sys
 from sqlalchemy import create_engine
+import pandas as pd
 
 # Conectar con el backend
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -81,6 +82,18 @@ with tabs[0]:
                 except Exception as e:
                     st.error("❌ Fallo de conexión o credenciales inválidas.")
                     st.code(str(e))
+                    
+      st.markdown("---")
+    st.subheader("🗄️ Conexiones SQL Activas (Bóveda)")
+    try:
+        conn_mgr = ConnectionManager()
+        conns = conn_mgr.get_all_connections()
+        if conns:
+            st.dataframe(pd.DataFrame(conns), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay conexiones registradas en la bóveda central.")
+    except Exception as e:
+        st.warning(f"Bóveda SQL no inicializada o inaccesible: {e}")              
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 2: YAML BUILDER
