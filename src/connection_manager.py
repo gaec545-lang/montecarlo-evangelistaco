@@ -44,3 +44,12 @@ class ConnectionManager:
         if not record:
             raise ValueError(f"No hay conexión registrada para el cliente {client_id}")
         return decrypt_data(record.encrypted_uri)
+        
+    def get_all_connections(self) -> list:
+        # Extrae la metadata sin desencriptar las contraseñas por seguridad
+        records = self.session.query(ClientConnection).all()
+        return [{
+            "client_id": r.client_id, 
+            "creado_por": r.created_by, 
+            "fecha_creacion": r.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        } for r in records]    
