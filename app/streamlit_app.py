@@ -261,6 +261,7 @@ def main():
             .stMarkdown, p, span, label, [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #1A1A2E !important; }
             h1, h2, h3, h4 { color: #1A1A2E !important; font-weight: 800 !important; }
             .stButton>button { background-color: #11111f; color: #D4AF37; border: 2px solid #D4AF37; }
+            [data-testid="stSidebarNav"] {display: none !important;}
         </style>
     """, unsafe_allow_html=True)
     
@@ -312,7 +313,12 @@ def main():
 
         selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
         # ---------------------------------------------
-        
+
+        # --- NAVEGACIÓN PRIVADA (SOLO EVANGELISTA & CO.) ---
+        if st.session_state.role in ["Consultor", "Admin"]:
+            st.markdown("---")
+            st.page_link("pages/3_⚙️_Admin_Panel.py", label="Panel de Administración", icon="⚙️")
+        # ----------------------------------------------------
         st.markdown("---")
         st.markdown("**⚙️ Configuración:**")
         st.caption("• Pipeline: 4 Fases")
