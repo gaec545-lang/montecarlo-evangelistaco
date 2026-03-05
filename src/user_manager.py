@@ -85,7 +85,7 @@ class UserManager:
         logging.info(f"USER_CREATED | user={username} | role={role} | client_id={client_id}")
         return True
 
-    def authenticate(self, username: str, password: str, ip: str = "unknown") -> Optional[User]:
+     def authenticate(self, username: str, password: str, ip: str = "unknown") -> Optional[User]:
         data = self._load_users()
         user_idx, user_data = next(((i, u) for i, u in enumerate(data['users']) if u['username'] == username), (None, None))
 
@@ -127,7 +127,7 @@ class UserManager:
             self._save_users(data)
             logging.warning(f"LOGIN_FAILED | user={username} | reason={reason} | ip={ip}")
             return None
-   def get_all_users(self) -> list:
+    def get_all_users(self) -> list:
         data = self._load_users()
         return data.get('users', [])
 
