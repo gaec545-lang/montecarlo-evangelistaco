@@ -83,7 +83,7 @@ with tabs[0]:
                     st.error("❌ Fallo de conexión o credenciales inválidas.")
                     st.code(str(e))
                     
-      st.markdown("---")
+    st.markdown("---")
     st.subheader("🗄️ Conexiones SQL Activas (Bóveda)")
     try:
         conn_mgr = ConnectionManager()
@@ -93,8 +93,7 @@ with tabs[0]:
         else:
             st.info("No hay conexiones registradas en la bóveda central.")
     except Exception as e:
-        st.warning(f"Bóveda SQL no inicializada o inaccesible: {e}")              
-
+        st.warning(f"Bóveda SQL no inicializada o inaccesible: {e}")
 # ═══════════════════════════════════════════════════════════════
 # TAB 2: YAML BUILDER
 # ═══════════════════════════════════════════════════════════════
@@ -126,7 +125,7 @@ with tabs[1]:
             else:
                 config_dict = {
                     "client": {
-                        "id": client_id,  # <--- INYECCIÓN CRÍTICA PARA EL EXTRACTOR (FASE 1)
+                        "id": client_id,
                         "name": client_name, 
                         "industry": industry.lower()
                     },
@@ -142,7 +141,8 @@ with tabs[1]:
                     st.success(f"✅ Modelo parametrizado exitosamente. Archivo guardado en: `{file_path}`")
                 except Exception as e:
                     st.error(f"❌ Error crítico al escribir en el disco: {e}")
-         st.markdown("---")
+                    
+    st.markdown("---")
     st.subheader("📁 Modelos Financieros Compilados")
     try:
         client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
@@ -162,7 +162,7 @@ with tabs[1]:
         else:
             st.info("No hay modelos parametrizados en el directorio.")
     except Exception as e:
-        st.error("Error al leer el directorio de clientes.")           
+        st.error("Error al leer el directorio de clientes.")
 # ═══════════════════════════════════════════════════════════════
 # TAB 3: USUARIOS
 # ═══════════════════════════════════════════════════════════════
@@ -190,7 +190,6 @@ with tabs[2]:
                 from src.user_manager import UserManager
                 try:
                     um = UserManager()
-                    # Si es consultor, no limitamos su vista (None). Si es ejecutivo, anclamos su ID.
                     cid = new_client_id if new_role == "Ejecutivo" else None
                     success = um.create_user(new_username, new_password, new_role, new_name, new_email, st.session_state.username, cid)
                     if success:
@@ -199,7 +198,8 @@ with tabs[2]:
                         st.error("❌ El usuario ya existe en la bóveda.")
                 except ValueError as ve:
                     st.error(f"❌ {ve}")
-          st.markdown("---")
+                    
+    st.markdown("---")
     st.subheader("🗃️ Directorio y Control de Accesos")
     from src.user_manager import UserManager
     um = UserManager()
@@ -207,7 +207,6 @@ with tabs[2]:
     
     if users:
         df_users = pd.DataFrame(users)
-        # Formateo visual para el administrador
         df_visual = df_users[['username', 'nombre_completo', 'role', 'client_id', 'is_active', 'created_at']].copy()
         df_visual['is_active'] = df_visual['is_active'].apply(lambda x: "🟢 Activo" if x else "🔴 Bloqueado")
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
