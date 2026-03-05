@@ -299,21 +299,6 @@ def main():
             st.session_state.authenticated = False
             st.session_state.role = None
             st.rerun()
-            
-        st.markdown("---")
-        
-        # --- NUEVO: SELECTOR DINÁMICO DE CLIENTES ---
-        st.markdown("**🏢 Portafolio de Clientes:**")
-        import os
-        try:
-            client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
-            if not client_files:
-                client_files = ['test_pasteleria_config.yaml']
-        except FileNotFoundError:
-            client_files = ['test_pasteleria_config.yaml']
-
-        selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
-        # ---------------------------------------------
 
         if st.session_state.role in ["Consultor", "Admin"]:
             st.markdown("---")
@@ -338,9 +323,16 @@ def main():
             client_id = st.session_state.get('client_id', 'Desconocido')
             st.info(f"ID: {client_id}")
             selected_client_file = f"{client_id}_config.yaml"
-    
-    
-        
+            
+        st.markdown("---")
+        st.markdown("**⚙️ Configuración:**")
+        st.caption("• Pipeline: 4 Fases")
+        st.caption("• Simulaciones: 10,000")
+        st.caption("• Motor: Decision Intelligence")
+        st.markdown("---")
+        st.caption("© 2026 Evangelista & Co.")
+
+    # ═════ ESTO DEBE ESTAR FUERA DEL SIDEBAR ═════
     with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client_file}..."):
         pipeline, config = load_pipeline(selected_client_file)
     
