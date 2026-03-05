@@ -1,0 +1,15 @@
+[theme]
+# evBrown: Color de acento para botones, sliders y selecciones
+primaryColor = "#D4AF37"
+
+# evBone: Fondo principal de la aplicación
+backgroundColor = "#FFFFFF"
+
+# evSurface: Fondo del panel lateral y widgets
+secondaryBackgroundColor = "#F5F5F5"
+
+# evBlack: Texto principal
+textColor = "#0a0a0a"
+
+# Tipografía para mantener el tono editorial
+font = "serif" 
