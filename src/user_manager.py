@@ -127,3 +127,24 @@ class UserManager:
             self._save_users(data)
             logging.warning(f"LOGIN_FAILED | user={username} | reason={reason} | ip={ip}")
             return None
+   def get_all_users(self) -> list:
+        data = self._load_users()
+        return data.get('users', [])
+
+    def toggle_user_status(self, username: str) -> bool:
+        data = self._load_users()
+        for user in data['users']:
+            if user['username'] == username:
+                user['is_active'] = not user['is_active']
+                self._save_users(data)
+                return user['is_active']
+        return False
+
+    def delete_user(self, username: str) -> bool:
+        data = self._load_users()
+        initial_len = len(data['users'])
+        data['users'] = [u for u in data['users'] if u['username'] != username]
+        if len(data['users']) < initial_len:
+            self._save_users(data)
+            return True
+        return False
