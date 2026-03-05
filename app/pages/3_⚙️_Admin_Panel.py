@@ -10,6 +10,17 @@ from src.connection_manager import ConnectionManager
 
 st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 
+# Ocultar menú nativo y crear botón de regreso
+st.markdown("""
+    <style>
+        [data-testid="stSidebarNav"] {display: none !important;}
+        [data-testid="stSidebar"] { background-color: #11111f; }
+    </style>
+""", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.page_link("app/streamlit_app.py", label="⬅️ Volver al Dashboard Master")
+
 # Verificación estricta de seguridad
 if not st.session_state.get('authenticated'):
     st.error("🔒 Acceso denegado. Inicia sesión en el portal principal.")
