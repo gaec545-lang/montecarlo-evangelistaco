@@ -256,10 +256,19 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 def main():
     st.markdown("""
         <style>
-            /* Solo ocultamos el menú genérico y estilizamos botones, el motor nativo hace el resto */
+            /* Ocultar menú genérico y estilizar botones */
             [data-testid="stSidebarNav"] {display: none !important;}
             .stButton>button { border: 1px solid #D4AF37; background-color: transparent; }
             .stButton>button:hover { border: 1px solid #1A1A2E; color: #1A1A2E; }
+            
+            /* INYECCIÓN DE ALTO CONTRASTE PARA EL PANEL LATERAL */
+            [data-testid="stSidebar"] p, 
+            [data-testid="stSidebar"] span, 
+            [data-testid="stSidebar"] label, 
+            [data-testid="stSidebar"] h3, 
+            [data-testid="stSidebar"] strong { 
+                color: #FFFFFF !important; 
+            }
         </style>
     """, unsafe_allow_html=True)
     
