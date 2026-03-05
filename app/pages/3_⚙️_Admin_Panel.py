@@ -99,6 +99,39 @@ with tabs[1]:
                 except Exception as e:
                     st.error(f"❌ Error crítico al escribir en el disco: {e}")
                     
+# ═══════════════════════════════════════════════════════════════
 # TAB 3: USUARIOS
+# ═══════════════════════════════════════════════════════════════
 with tabs[2]:
-    st.info("Directorio de usuarios (Fase futura)")
+    st.subheader("👥 Alta de Clientes y Ejecutivos")
+    st.markdown("Asigna credenciales a tus clientes y vincúlalos a sus modelos financieros.")
+    
+    with st.form("create_user_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("Usuario (ej. director_hotel)")
+            new_password = st.text_input("Contraseña", type="password", help="Mínimo 8 caracteres, 1 mayúscula, 1 minúscula, 1 número")
+            new_name = st.text_input("Nombre Completo")
+        with col2:
+            new_email = st.text_input("Correo Corporativo")
+            new_role = st.selectbox("Rol", ["Ejecutivo", "Consultor"])
+            new_client_id = st.text_input("ID de Cliente (Debe coincidir con el YAML Builder)", placeholder="ej. la_quinta_alhondiga")
+        
+        if st.form_submit_button("🛡️ Crear Cuenta Segura", use_container_width=True):
+            if not new_username or not new_password or not new_name:
+                st.error("Campos básicos incompletos.")
+            elif new_role == "Ejecutivo" and not new_client_id:
+                st.error("❌ CRÍTICO: Un Ejecutivo necesita estar atado a un ID de Cliente para ver su Dashboard.")
+            else:
+                from src.user_manager import UserManager
+                try:
+                    um = UserManager()
+                    # Si es consultor, no limitamos su vista (None). Si es ejecutivo, anclamos su ID.
+                    cid = new_client_id if new_role == "Ejecutivo" else None
+                    success = um.create_user(new_username, new_password, new_role, new_name, new_email, st.session_state.username, cid)
+                    if success:
+                        st.success(f"✅ Ejecutivo '{new_name}' autorizado. Modelo anclado: {cid}")
+                    else:
+                        st.error("❌ El usuario ya existe en la bóveda.")
+                except ValueError as ve:
+                    st.error(f"❌ {ve}")
