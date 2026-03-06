@@ -122,49 +122,55 @@ class ConfigurationManager:
     
     def get_variables(self) -> List[Dict]:
         """
-        Retorna lista de variables definidas en template
-        
-        Returns:
-            Lista de dicts con info de cada variable
+        Retorna lista de variables adaptándose al nuevo YAML Builder.
         """
+        # El YAML Builder nuevo guarda las variables como un diccionario.
+        vars_dict = self.get('variables')
+        if isinstance(vars_dict, dict):
+            # Convierte el diccionario en la lista exacta que espera el motor
+            return [{"name": k, **v} for k, v in vars_dict.items()]
+            
+        # Fallback por si hay archivos muy antiguos
         return self.get('common_variables', [])
     
     def get_business_model(self) -> str:
         """
-        Retorna código del modelo de negocio como string
-        
-        Returns:
-            String con código Python del modelo
+        Retorna código del modelo de negocio soportando el nuevo formato dinámico.
         """
-        return self.get('business_model.template', '')
+        bm = self.get('business_model')
+        
+        # Si viene del nuevo YAML Builder (String puro)
+        if isinstance(bm, str):
+            return bm
+            
+        # Si viene del modelo antiguo (Diccionario con llave 'template')
+        if isinstance(bm, dict):
+            return bm.get('template', '')
+            
+        return ''
     
     def get_distribution_config(self, variable_name: str) -> Dict:
         """
-        Retorna configuración de distribución para una variable
-        
-        Busca primero en custom_distributions del cliente,
-        luego en default_distributions del template
-        
-        Args:
-            variable_name: Nombre de la variable (ej: 'precio_harina')
-            
-        Returns:
-            Dict con configuración de distribución
-            
-        Raises:
-            ValueError: Si no encuentra configuración
+        Retorna configuración de distribución adaptando las llaves nuevas al motor viejo.
         """
-        # 1. Buscar en cliente
+        # 1. Buscar en el nuevo formato dinámico (YAML Builder)
+        var_config = self.get(f'variables.{variable_name}')
+        if var_config:
+            # Traducimos las llaves para que el motor antiguo las entienda
+            return {
+                "type": var_config.get("distribution", "normal"),
+                "fallback": var_config.get("params", {})
+            }
+            
+        # 2. Buscar en configuraciones legacy
         custom = self.get(f'simulation.custom_distributions.{variable_name}')
         if custom:
             return custom
         
-        # 2. Buscar en template
         default = self.get(f'default_distributions.{variable_name}')
         if default:
             return default
         
-        # 3. No encontrado
         raise ValueError(
             f"❌ No se encontró configuración de distribución para variable: {variable_name}"
         )
