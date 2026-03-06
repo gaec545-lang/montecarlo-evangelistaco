@@ -6,3 +6,4 @@ psycopg2-binary
 cryptography
 bcrypt
 pyyaml
+supabase==2.3.4
