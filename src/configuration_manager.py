@@ -169,47 +169,28 @@ class ConfigurationManager:
             f"❌ No se encontró configuración de distribución para variable: {variable_name}"
         )
     
-    def validate(self) -> Tuple[bool, List[str]]:
+    def validate(self) -> tuple[bool, list[str]]:
         """
-        Valida que configuración esté completa
-        
-        Returns:
-            (is_valid, [error_messages])
+        Validador Universal Agnostico: 
+        Solo exige la estructura maestra, no le importa la industria.
         """
         errors = []
         
-        # Validación 1: Industria especificada
-        industry = self.get('client.industry')
-        if not industry:
-            errors.append("Cliente no especifica 'industry'")
+        # 1. Validaciones estructurales mínimas
+        if not self.get('client.id'):
+            errors.append("Falta identificador del cliente (client.id)")
+            
+        if not self.get('simulation.iterations'):
+            errors.append("Falta número de iteraciones (simulation.iterations)")
+            
+        if not self.get('variables'):
+            errors.append("No hay variables de riesgo definidas en el modelo.")
+
+        # 2. Eliminamos las restricciones "legacy" de la pastelería.
+        # Ya no exigimos 'precio_venta_unitario' ni 'receta'. 
+        # El modelo de negocio ahora se dicta por la función matemática dinámica.
         
-        # Validación 2: Template tiene estructura mínima
-        if not self.get('industry.name'):
-            errors.append("Template no tiene 'industry.name'")
-        
-        if not self.get('common_variables'):
-            errors.append("Template no tiene 'common_variables'")
-        
-        # Validación 3: Parámetros de negocio requeridos
-        required_params = self.get('business_model.parameters_required', [])
-        for param in required_params:
-            if self.get(f'business_parameters.{param}') is None:
-                errors.append(
-                    f"Parámetro requerido faltante: business_parameters.{param}"
-                )
-        
-        # Validación 4: Cada variable tiene distribución
-        variables = self.get_variables()
-        for var in variables:
-            var_name = var.get('name')
-            if var_name:
-                try:
-                    self.get_distribution_config(var_name)
-                except ValueError as e:
-                    errors.append(str(e))
-        
-        is_valid = len(errors) == 0
-        return is_valid, errors
+        return len(errors) == 0, errors
     
     def to_dict(self) -> dict:
         """
