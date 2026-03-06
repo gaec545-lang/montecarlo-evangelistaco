@@ -53,3 +53,27 @@ class ConnectionManager:
             "creado_por": r.created_by, 
             "fecha_creacion": r.created_at.strftime("%Y-%m-%d %H:%M:%S")
         } for r in records]    
+
+    def save_api_connection(self, client_id: str, project_url: str, api_key: str, username: str) -> bool:
+        import json
+        payload = json.dumps({"url": project_url, "key": api_key})
+        encrypted_data = encrypt_data(payload)
+        
+        existing = self.session.query(ClientConnection).filter_by(client_id=client_id).first()
+        if existing:
+            existing.encrypted_uri = encrypted_data
+            existing.updated_at = datetime.utcnow()
+        else:
+            new_conn = ClientConnection(client_id=client_id, encrypted_uri=encrypted_data, created_by=username)
+            self.session.add(new_conn)
+        self.session.commit()
+        return True
+
+    def get_api_connection(self, client_id: str) -> dict:
+        import json
+        record = self.session.query(ClientConnection).filter_by(client_id=client_id).first()
+        if not record:
+            raise ValueError(f"No hay conexión registrada para el cliente {client_id}")
+        
+        decrypted_data = decrypt_data(record.encrypted_uri)
+        return json.loads(decrypted_data)
