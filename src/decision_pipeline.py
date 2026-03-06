@@ -43,8 +43,9 @@ class DecisionPipeline:
         # FASE 1
         extracted_data = {}
         if self.data_engine:
+            # CIRUGÍA APLICADA: Eliminado el .connect(). Llamamos directamente a la extracción.
             extracted_data = self.run_phase(1, "Data Extraction Engine", 
-                lambda: (self.data_engine.connect(), self.data_engine.extract_all_variables())[1])
+                lambda: self.data_engine.extract_all_variables())
         
         # FASE 2
         def run_mc():
