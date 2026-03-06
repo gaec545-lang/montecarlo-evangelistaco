@@ -97,74 +97,92 @@ with tabs[0]:
     except Exception as e:
         st.warning(f"Bóveda no inicializada o inaccesible: {e}")
 # ═══════════════════════════════════════════════════════════════
-# TAB 2: YAML BUILDER
+# TAB 2: YAML BUILDER (POTENCIADO POR IA - GROQ)
 # ═══════════════════════════════════════════════════════════════
 with tabs[1]:
-    st.subheader("📋 YAML Builder: Parametrización de Clientes")
-    with st.form("yaml_builder_form"):
+    st.subheader("🤖 YAML Builder: Auditoría Forense Autónoma")
+    st.markdown("Deja que el Socio Cuantitativo (Llama 3) analice la base de datos y escriba la matemática del riesgo.")
+    
+    with st.form("ai_yaml_builder_form"):
         col1, col2 = st.columns(2)
         with col1:
-            client_id = st.text_input("ID Único del Cliente")
+            client_id = st.text_input("ID Único del Cliente", placeholder="ej. cibrian_arquitectos")
             client_name = st.text_input("Nombre Comercial")
+            target_table = st.text_input("Tabla a Auditar en Supabase", placeholder="ej. fact_proyectos")
         with col2:
-            industry = st.selectbox("Sector", ["Alimentos", "Textil", "Construcción", "Retail"])
-            simulations = st.number_input("Iteraciones", min_value=1000, value=10000, step=1000)
+            industry = st.selectbox("Sector", ["Construcción", "Retail", "Alimentos", "Textil", "Logística"])
+            simulations = st.number_input("Iteraciones Monte Carlo", min_value=1000, value=10000, step=1000)
+            t_loss = st.slider("Umbral Crítico de Probabilidad de Pérdida (%)", 1, 100, 20) / 100.0
 
-        v_name = st.text_input("Nombre de la Variable de Riesgo (ej. costo_materia_prima)")
-        col_v1, col_v2, col_v3 = st.columns(3)
-        with col_v1:
-            v_dist = st.selectbox("Distribución", ["normal", "triangular", "uniform"])
-        with col_v2:
-            v_mean = st.number_input("Media (Valor Base)", value=0.0)
-        with col_v3:
-            v_std = st.number_input("Desviación (Volatilidad)", value=0.0)
-
-        t_loss = st.slider("Umbral Crítico de Probabilidad de Pérdida (%)", 1, 100, 25) / 100.0
-
-        if st.form_submit_button("💾 Compilar y Guardar Modelo", use_container_width=True):
-            if not client_id or not v_name:
-                st.error("❌ ID del Cliente y Variable son obligatorios.")
+        if st.form_submit_button("🧠 Extraer Columnas y Autogenerar Modelo (IA)", use_container_width=True):
+            if not client_id or not target_table:
+                st.error("❌ ID del Cliente y Tabla son obligatorios para conectar con Supabase.")
             else:
-                config_dict = {
-                    "client": {
-                        "id": client_id,
-                        "name": client_name, 
-                        "industry": industry.lower()
-                    },
-                    "simulation": {"iterations": simulations},
-                    "variables": {v_name: {"distribution": v_dist, "params": {"mean": v_mean, "std_dev": v_std}}},
-                    "thresholds": {"critical_loss_prob": t_loss},
-                    
-                    # Parámetros financieros puros del proyecto
-                    "business_parameters": {
-                        "presupuesto_base": 10000000  # Capital en riesgo base
-                    },
-                    
-                    # Motor matemático inyectado. 
-                    # (En la Fase 3, este código de Python lo generará la IA leyendo la BD)
-                    "business_model": f"""
-def modelo_dinamico(variables, params):
-    riesgo_pct = variables.get('{v_name}', 0)
-    presupuesto = params.get('presupuesto_base', 0)
-    
-    # Cálculo de impacto: Si el sobrecosto es del 15%, el impacto es negativo
-    impacto_financiero = presupuesto * (riesgo_pct / 100.0)
-    
-    return impacto_financiero
-"""
-                }
-                os.makedirs(os.path.join("configs", "clients"), exist_ok=True)
-                file_path = os.path.join("configs", "clients", f"{client_id}_config.yaml")
                 try:
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
-                    st.success(f"✅ Modelo parametrizado exitosamente. Archivo guardado en: `{file_path}`")
+                    with st.spinner("1️⃣ Conectando a Bóveda y extrayendo esquema de Supabase..."):
+                        # 1. Recuperamos credenciales y extraemos datos
+                        conn_manager = ConnectionManager()
+                        creds = conn_manager.get_api_connection(client_id)
+                        
+                        from src.data_extraction_engine import DataExtractionEngine
+                        # Creamos un config temporal solo para inicializar el extractor
+                        temp_config = {"client": {"id": client_id}} 
+                        extractor = DataExtractionEngine(creds, temp_config)
+                        
+                        df = extractor.extract_data(target_table)
+                        columnas_disponibles = df.columns.tolist()
+                        st.success(f"Esquema extraído: {len(columnas_disponibles)} columnas detectadas.")
+
+                    with st.spinner("2️⃣ Llama 3 analizando vectores de riesgo y escribiendo Python..."):
+                        # 2. Despertamos al Agente IA
+                        from src.ai_agent import AIFinancialAgent
+                        agent = AIFinancialAgent()
+                        ai_decision = agent.analyze_schema_and_build_model(industry, columnas_disponibles)
+                        
+                        # 3. Construimos el YAML definitivo con la mente de la IA
+                        config_dict = {
+                            "client": {
+                                "id": client_id,
+                                "name": client_name, 
+                                "industry": industry.lower()
+                            },
+                            "simulation": {"iterations": simulations},
+                            "variables": {
+                                ai_decision["variable_riesgo"]: {
+                                    "distribution": ai_decision["distribucion"], 
+                                    "params": {
+                                        "mean": ai_decision["media"], 
+                                        "std_dev": ai_decision["desviacion"]
+                                    }
+                                }
+                            },
+                            "thresholds": {"critical_loss_prob": t_loss},
+                            "business_parameters": {
+                                "presupuesto_base": ai_decision["presupuesto_base"]
+                            },
+                            "business_model": ai_decision["python_code"]
+                        }
+                        
+                        # 4. Guardamos en el disco
+                        os.makedirs(os.path.join("configs", "clients"), exist_ok=True)
+                        file_path = os.path.join("configs", "clients", f"{client_id}_config.yaml")
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
+                        
+                        st.success(f"✅ Arquitectura matemática completada. Archivo blindado en: `{file_path}`")
+                        
+                        # Mostramos el razonamiento del CFO Autónomo
+                        with st.expander("👁️ Ver Razonamiento del CFO (Chain of Thought)", expanded=True):
+                            st.info(ai_decision.get("_razonamiento_cuantitativo", "Análisis completado sin comentarios adicionales."))
+                            st.code(ai_decision["python_code"], language="python")
+
                 except Exception as e:
-                    st.error(f"❌ Error crítico al escribir en el disco: {e}")
-                    
+                    st.error(f"❌ Fallo en la matriz de ejecución: {e}")
+
     st.markdown("---")
     st.subheader("📁 Modelos Financieros Compilados")
     try:
+        os.makedirs('configs/clients', exist_ok=True)
         client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
         yaml_data = []
         for f in client_files:
@@ -173,16 +191,15 @@ def modelo_dinamico(variables, params):
                 yaml_data.append({
                     "Archivo": f,
                     "Client ID": data.get('client', {}).get('id', 'N/A'),
-                    "Empresa": data.get('client', {}).get('name', 'N/A'),
                     "Sector": data.get('client', {}).get('industry', 'N/A'),
-                    "Simulaciones": data.get('simulation', {}).get('iterations', 0)
+                    "Variable Riesgo": list(data.get('variables', {}).keys())[0] if data.get('variables') else 'N/A'
                 })
         if yaml_data:
             st.dataframe(pd.DataFrame(yaml_data), use_container_width=True, hide_index=True)
         else:
             st.info("No hay modelos parametrizados en el directorio.")
     except Exception as e:
-        st.error("Error al leer el directorio de clientes.")
+        st.error(f"Error al leer el directorio de clientes: {e}")
 # ═══════════════════════════════════════════════════════════════
 # TAB 3: USUARIOS
 # ═══════════════════════════════════════════════════════════════
