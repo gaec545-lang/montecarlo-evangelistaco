@@ -200,7 +200,7 @@ with tabs[2]:
                         st.error("❌ El usuario ya existe en la bóveda.")
                 except ValueError as ve:
                     st.error(f"❌ {ve}")
-                    
+    
     st.markdown("---")
     st.subheader("🗃️ Directorio y Control de Accesos")
     from src.user_manager import UserManager
@@ -209,8 +209,20 @@ with tabs[2]:
     
     if users:
         df_users = pd.DataFrame(users)
-        df_visual = df_users[['username', 'nombre_completo', 'role', 'client_id', 'is_active', 'created_at']].copy()
-        df_visual['is_active'] = df_visual['is_active'].apply(lambda x: "🟢 Activo" if x else "🔴 Bloqueado")
+        
+        # --- ESCUDO DE INMUNIDAD PARA DATOS LEGACY ---
+        expected_cols = ['username', 'nombre_completo', 'role', 'client_id', 'is_active', 'created_at']
+        for col in expected_cols:
+            if col not in df_users.columns:
+                df_users[col] = "N/A"
+                
+        df_visual = df_users[expected_cols].copy()
+        
+        # Formateo seguro para booleanos y textos nulos
+        df_visual['is_active'] = df_visual['is_active'].apply(
+            lambda x: "🟢 Activo" if x is True else ("🔴 Bloqueado" if x is False else "⚠️ Indefinido")
+        )
+        
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
         
         st.markdown("**⚡ Acciones Ejecutivas**")
