@@ -57,34 +57,36 @@ st.markdown("---")
 tabs = st.tabs(["🔌 Quick Connect (Ingesta)", "📋 YAML Builder", "👥 Usuarios"])
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 1: QUICK CONNECT
+# TAB 1: QUICK CONNECT (MODO API)
 # ═══════════════════════════════════════════════════════════════
 with tabs[0]:
-    st.subheader("⚡ Quick Connect: Ingesta de Datos")
-    st.markdown("Vincula la base de datos PostgreSQL/Supabase del cliente.")
+    st.subheader("⚡ Quick Connect: Ingesta Segura (API)")
+    st.markdown("Vincula la base de datos Supabase del cliente sin riesgo de bloqueos de red.")
     with st.form("quick_connect_form"):
-        c_id = st.text_input("ID del Cliente (ej. pasteleria_puebla)")
-        c_uri = st.text_input("URL de Conexión (URI)", type="password", placeholder="postgresql://...")
+        c_id = st.text_input("ID del Cliente (ej. hotel_quinta)")
+        c_url = st.text_input("URL del Proyecto", placeholder="https://xyz...supabase.co")
+        c_key = st.text_input("API Key (service_role)", type="password", placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
         
-        if st.form_submit_button("Validar y Guardar Conexión", use_container_width=True):
-            if not c_id or not c_uri:
-                st.error("Campos incompletos.")
+        if st.form_submit_button("Validar y Guardar Conexión API", use_container_width=True):
+            if not c_id or not c_url or not c_key:
+                st.error("❌ Campos incompletos.")
+            elif not c_url.startswith("http"):
+                st.error("❌ La URL debe comenzar con https://")
             else:
                 try:
-                    test_uri = c_uri.replace("postgres://", "postgresql://", 1)
-                    test_engine = create_engine(test_uri, pool_pre_ping=True, connect_args={'connect_timeout': 5})
-                    with test_engine.connect() as conn:
-                        pass
+                    # Prueba de fuego: Validamos la estructura del cliente Supabase
+                    from supabase import create_client, Client
+                    test_client: Client = create_client(c_url, c_key)
                     
+                    # Guardamos la dupla (URL + KEY) encriptada
                     conn_manager = ConnectionManager()
-                    conn_manager.save_connection(client_id=c_id, raw_uri=test_uri, username=st.session_state.username)
-                    st.success(f"✅ Conexión blindada y guardada en producción para '{c_id}'.")
+                    conn_manager.save_api_connection(client_id=c_id, project_url=c_url, api_key=c_key, username=st.session_state.username)
+                    st.success(f"✅ Llave de grado 'service_role' blindada en producción para '{c_id}'.")
                 except Exception as e:
-                    st.error("❌ Fallo de conexión o credenciales inválidas.")
-                    st.code(str(e))
+                    st.error(f"❌ Fallo al instanciar el cliente o guardar credenciales: {e}")
                     
     st.markdown("---")
-    st.subheader("🗄️ Conexiones SQL Activas (Bóveda)")
+    st.subheader("🗄️ Conexiones Activas (Bóveda)")
     try:
         conn_mgr = ConnectionManager()
         conns = conn_mgr.get_all_connections()
@@ -93,7 +95,7 @@ with tabs[0]:
         else:
             st.info("No hay conexiones registradas en la bóveda central.")
     except Exception as e:
-        st.warning(f"Bóveda SQL no inicializada o inaccesible: {e}")
+        st.warning(f"Bóveda no inicializada o inaccesible: {e}")
 # ═══════════════════════════════════════════════════════════════
 # TAB 2: YAML BUILDER
 # ═══════════════════════════════════════════════════════════════
