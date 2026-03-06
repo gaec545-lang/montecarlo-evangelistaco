@@ -133,7 +133,25 @@ with tabs[1]:
                     },
                     "simulation": {"iterations": simulations},
                     "variables": {v_name: {"distribution": v_dist, "params": {"mean": v_mean, "std_dev": v_std}}},
-                    "thresholds": {"critical_loss_prob": t_loss}
+                    "thresholds": {"critical_loss_prob": t_loss},
+                    
+                    # Parámetros financieros puros del proyecto
+                    "business_parameters": {
+                        "presupuesto_base": 10000000  # Capital en riesgo base
+                    },
+                    
+                    # Motor matemático inyectado. 
+                    # (En la Fase 3, este código de Python lo generará la IA leyendo la BD)
+                    "business_model": f"""
+def modelo_dinamico(variables, params):
+    riesgo_pct = variables.get('{v_name}', 0)
+    presupuesto = params.get('presupuesto_base', 0)
+    
+    # Cálculo de impacto: Si el sobrecosto es del 15%, el impacto es negativo
+    impacto_financiero = presupuesto * (riesgo_pct / 100.0)
+    
+    return impacto_financiero
+"""
                 }
                 os.makedirs(os.path.join("configs", "clients"), exist_ok=True)
                 file_path = os.path.join("configs", "clients", f"{client_id}_config.yaml")
