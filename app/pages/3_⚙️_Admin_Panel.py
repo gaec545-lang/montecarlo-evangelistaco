@@ -325,11 +325,12 @@ with tab2:
             ai_prompt = f"""Industria: {selected_client.industry}
 Cliente: {selected_client.name}
 
-Esquema de base de datos:
+Esquema de base de datos (metadata):
 {json.dumps(schemas, indent=2, ensure_ascii=False)}
 
 TAREA: Identifica las 2-4 variables de riesgo mas importantes para la industria {selected_client.industry}.
 Para cada variable usa columnas reales del esquema (fecha/timestamp y valor numerico).
+Genera tambien reglas de decision especificas para la industria.
 
 RETORNA SOLO EL YAML (sin markdown, sin explicaciones):
 
@@ -356,6 +357,21 @@ business_model: |
   def modelo_{industry_fn}(variables, params):
       resultado = 0.0
       return resultado
+
+decision_rules:
+  - title: "Alta probabilidad de perdida"
+    condition: "prob_loss > 0.25"
+    priority: "Alta"
+    actions:
+      - "Revisar estructura de costos inmediatamente"
+      - "Analizar drivers principales de riesgo"
+      - "Implementar controles de contingencia"
+  - title: "Volatilidad excesiva detectada"
+    condition: "cv > 0.30"
+    priority: "Media"
+    actions:
+      - "Evaluar estrategias de cobertura"
+      - "Diversificar exposicion a riesgo"
 
 thresholds:
   critical_loss_prob: 0.20
