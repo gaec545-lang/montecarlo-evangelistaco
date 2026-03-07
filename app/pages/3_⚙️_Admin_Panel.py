@@ -498,10 +498,11 @@ with tab3:
                 key="assign_client"
             )
             if st.button("➕ Asignar"):
-                if um_assign.assign_client_to_consultant(consultor_sel, client_sel):
+                if um_assign.assign_client_to_consultant(
+                        consultor_sel, client_sel, st.session_state.username):
                     st.success(f"✅ '{client_sel}' asignado a '{consultor_sel}'.")
                 else:
-                    st.error("No se pudo asignar (verificar que el usuario tenga rol Consultor/Admin).")
+                    st.error("Esa asignacion ya existe.")
 
         with col_b:
             consultor_view = st.selectbox("Ver asignaciones de:", consultores, key="view_consultor")
@@ -514,7 +515,7 @@ with tab3:
                     col_x, col_y = st.columns([3, 1])
                     col_x.write(f"• {name} (`{cid}`)")
                     if col_y.button("✖️", key=f"unassign_{consultor_view}_{cid}"):
-                        um_assign.unassign_client_from_consultant(consultor_view, cid)
+                        um_assign.unassign_client(consultor_view, cid)
                         st.rerun()
             else:
                 st.info("Sin clientes asignados.")

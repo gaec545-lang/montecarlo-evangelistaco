@@ -36,19 +36,28 @@ class UserManager:
         self.config_path = config_path
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
         self._ensure_file_exists()
+        self.data = self._load_users()  # Cache en memoria para métodos de asignación
 
     def _ensure_file_exists(self):
         if not os.path.exists(self.config_path):
             with open(self.config_path, 'w') as file:
-                yaml.dump({'users': []}, file)
+                yaml.dump({'users': [], 'assignments': []}, file)
 
     def _load_users(self) -> dict:
         with open(self.config_path, 'r') as file:
-            return yaml.safe_load(file) or {'users': []}
+            data = yaml.safe_load(file) or {}
+            data.setdefault('users', [])
+            data.setdefault('assignments', [])
+            return data
 
     def _save_users(self, data: dict):
         with open(self.config_path, 'w') as file:
             yaml.dump(data, file, default_flow_style=False)
+
+    def _save(self):
+        """Persiste self.data en disco."""
+        with open(self.config_path, 'w') as file:
+            yaml.dump(self.data, file, default_flow_style=False)
 
     def _validate_password_complexity(self, password: str) -> bool:
         if len(password) < 8: return False
@@ -154,48 +163,64 @@ class UserManager:
 
     # ═══════════════════════════════════════════════════════════════
     # GESTIÓN DE ASIGNACIÓN CONSULTOR ↔ CLIENTE
+    # Storage: clave 'assignments' en el YAML (lista de registros)
     # ═══════════════════════════════════════════════════════════════
 
-    def get_clients_for_consultant(self, username: str) -> List[str]:
+    def get_assignments(self) -> List[Dict]:
+        """Retorna lista completa de asignaciones consultor-cliente."""
+        self.data = self._load_users()
+        return self.data.get('assignments', [])
+
+    def assign_client_to_consultant(self, consultant_username: str, client_id: str,
+                                    assigned_by: str = "system") -> bool:
+        """Asigna un cliente a un consultor."""
+        from datetime import date
+        self.data = self._load_users()
+
+        existing = [a for a in self.data['assignments']
+                    if a['consultant_username'] == consultant_username
+                    and a['client_id'] == client_id]
+        if existing:
+            return False
+
+        self.data['assignments'].append({
+            'consultant_username': consultant_username,
+            'client_id': client_id,
+            'assigned_at': str(date.today()),
+            'assigned_by': assigned_by
+        })
+        self._save()
+        logging.info(f"CLIENT_ASSIGNED | client={client_id} | consultant={consultant_username} | by={assigned_by}")
+        return True
+
+    def unassign_client(self, consultant_username: str, client_id: str) -> bool:
+        """Remueve asignacion consultor-cliente."""
+        self.data = self._load_users()
+        original_count = len(self.data['assignments'])
+        self.data['assignments'] = [
+            a for a in self.data['assignments']
+            if not (a['consultant_username'] == consultant_username
+                    and a['client_id'] == client_id)
+        ]
+        if len(self.data['assignments']) < original_count:
+            self._save()
+            return True
+        return False
+
+    def get_clients_for_consultant(self, consultant_username: str) -> List[str]:
         """Retorna lista de client_ids asignados a un consultor."""
-        data = self._load_users()
-        for user in data['users']:
-            if user.get('username') == username:
-                return user.get('assigned_clients') or []
-        return []
+        self.data = self._load_users()
+        return [a['client_id'] for a in self.data.get('assignments', [])
+                if a['consultant_username'] == consultant_username]
 
     def get_consultant_for_client(self, client_id: str) -> Optional[str]:
-        """Retorna el username del primer consultor asignado a un cliente."""
-        data = self._load_users()
-        for user in data['users']:
-            if user.get('role') in ('Consultor', 'Admin'):
-                if client_id in (user.get('assigned_clients') or []):
-                    return user.get('username')
+        """Retorna username del consultor asignado a un cliente."""
+        self.data = self._load_users()
+        for a in self.data.get('assignments', []):
+            if a['client_id'] == client_id:
+                return a['consultant_username']
         return None
 
-    def assign_client_to_consultant(self, consultant_username: str, client_id: str) -> bool:
-        """Agrega client_id a la lista de clientes asignados de un consultor."""
-        data = self._load_users()
-        for user in data['users']:
-            if user.get('username') == consultant_username and user.get('role') in ('Consultor', 'Admin'):
-                if 'assigned_clients' not in user or user['assigned_clients'] is None:
-                    user['assigned_clients'] = []
-                if client_id not in user['assigned_clients']:
-                    user['assigned_clients'].append(client_id)
-                self._save_users(data)
-                logging.info(f"CLIENT_ASSIGNED | client={client_id} | consultant={consultant_username}")
-                return True
-        return False
-
+    # Alias de compatibilidad
     def unassign_client_from_consultant(self, consultant_username: str, client_id: str) -> bool:
-        """Quita client_id de la lista de clientes asignados de un consultor."""
-        data = self._load_users()
-        for user in data['users']:
-            if user.get('username') == consultant_username:
-                assigned = user.get('assigned_clients') or []
-                if client_id in assigned:
-                    assigned.remove(client_id)
-                    user['assigned_clients'] = assigned
-                    self._save_users(data)
-                    return True
-        return False
+        return self.unassign_client(consultant_username, client_id)
