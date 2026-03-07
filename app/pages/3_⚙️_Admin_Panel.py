@@ -213,23 +213,22 @@ with tab2:
 
     if not all_clients2:
         st.warning("No hay clientes registrados. Crea uno en el Tab 1 primero.")
-        st.stop()
+    else:
+        try:
+            conn_mgr2 = ConnectionManager()
+            boveda2 = True
+        except Exception:
+            boveda2 = False
 
-    try:
-        conn_mgr2 = ConnectionManager()
-        boveda2 = True
-    except Exception:
-        boveda2 = False
+        client_options = {c.client_id: f"{c.name} ({c.client_id})" for c in all_clients2}
+        selected_client_id = st.selectbox(
+            "Selecciona el cliente a configurar",
+            options=list(client_options.keys()),
+            format_func=lambda x: client_options[x]
+        )
+        selected_client = client_mgr2.get_client(selected_client_id)
 
-    client_options = {c.client_id: f"{c.name} ({c.client_id})" for c in all_clients2}
-    selected_client_id = st.selectbox(
-        "Selecciona el cliente a configurar",
-        options=list(client_options.keys()),
-        format_func=lambda x: client_options[x]
-    )
-    selected_client = client_mgr2.get_client(selected_client_id)
-
-    st.info(f"""
+        st.info(f"""
 **Cliente:** {selected_client.name} | **Industria:** {selected_client.industry}
 
 **Instrucciones:**
@@ -238,91 +237,89 @@ with tab2:
 3. Pegaos abajo (una por linea) e ignora tablas de sistema: `auth`, `storage`, `realtime`
     """)
 
-    # ── INPUT DIRECTO DE TABLAS ──────────────────────────────────────
-    table_input = st.text_area(
-        "Tablas disponibles (una por linea)",
-        placeholder="ventas\ncompras\ninventario\nproductos\nclientes",
-        height=180,
-        help="Solo tablas con datos de operacion. Ejemplo: ventas, compras, inventario, productos"
-    )
+        # ── INPUT DIRECTO DE TABLAS ──────────────────────────────────────
+        table_input = st.text_area(
+            "Tablas disponibles (una por linea)",
+            placeholder="ventas\ncompras\ninventario\nproductos\nclientes",
+            height=180,
+            help="Solo tablas con datos de operacion. Ejemplo: ventas, compras, inventario, productos"
+        )
 
-    if not table_input:
-        st.warning("Introduce las tablas para continuar.")
-        st.stop()
+        if not table_input:
+            st.warning("Introduce las tablas para continuar.")
+        else:
+            all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
 
-    all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
+            if not all_tables:
+                st.error("No se detectaron tablas validas.")
+            else:
+                st.success(f"✅ {len(all_tables)} tablas para analizar")
+                with st.expander("Ver tablas detectadas"):
+                    for idx, table in enumerate(all_tables, 1):
+                        st.write(f"{idx}. `{table}`")
 
-    if not all_tables:
-        st.error("No se detectaron tablas validas.")
-        st.stop()
+                # ── BOTÓN PRINCIPAL ──────────────────────────────────────────────
+                if st.button("🤖 Generar Configuracion con IA", type="primary"):
+                    if not boveda2:
+                        st.error("Boveda no disponible (DATABASE_URL requerida).")
+                        st.stop()
 
-    st.success(f"✅ {len(all_tables)} tablas para analizar")
-    with st.expander("Ver tablas detectadas"):
-        for idx, table in enumerate(all_tables, 1):
-            st.write(f"{idx}. `{table}`")
+                    creds = conn_mgr2.get_client_connection(selected_client_id)
+                    if not creds:
+                        st.error("Cliente sin credenciales Supabase. Configuralas en Tab 1.")
+                        st.stop()
 
-    # ── BOTÓN PRINCIPAL ──────────────────────────────────────────────
-    if st.button("🤖 Generar Configuracion con IA", type="primary"):
-        if not boveda2:
-            st.error("Boveda no disponible (DATABASE_URL requerida).")
-            st.stop()
+                    schemas = {}
 
-        creds = conn_mgr2.get_client_connection(selected_client_id)
-        if not creds:
-            st.error("Cliente sin credenciales Supabase. Configuralas en Tab 1.")
-            st.stop()
+                    # ── EXTRACCION LIGERA: solo 3 filas por tabla ────────────────
+                    with st.spinner("Conectando a Supabase y extrayendo esquemas..."):
+                        try:
+                            from supabase import create_client
+                            import json
 
-        schemas = {}
+                            supabase = create_client(creds['url'], creds['key'])
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
 
-        # ── EXTRACCION LIGERA: solo 3 filas por tabla ────────────────
-        with st.spinner("Conectando a Supabase y extrayendo esquemas..."):
-            try:
-                from supabase import create_client
-                import json
+                            for idx, table in enumerate(all_tables):
+                                status_text.text(f"Analizando {table}... ({idx + 1}/{len(all_tables)})")
+                                try:
+                                    result = supabase.table(table).select("*").limit(3).execute()
+                                    if result.data:
+                                        df = pd.DataFrame(result.data)
+                                        schemas[table] = {
+                                            'columns': df.columns.tolist(),
+                                            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+                                            'sample_count': len(result.data),
+                                            'first_row': result.data[0]
+                                        }
+                                    else:
+                                        st.warning(f"Tabla `{table}` esta vacia.")
+                                except Exception as e:
+                                    st.warning(f"No se pudo acceder a `{table}`: {str(e)[:100]}")
+                                progress_bar.progress((idx + 1) / len(all_tables))
 
-                supabase = create_client(creds['url'], creds['key'])
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+                            status_text.empty()
+                            progress_bar.empty()
 
-                for idx, table in enumerate(all_tables):
-                    status_text.text(f"Analizando {table}... ({idx + 1}/{len(all_tables)})")
-                    try:
-                        result = supabase.table(table).select("*").limit(3).execute()
-                        if result.data:
-                            df = pd.DataFrame(result.data)
-                            schemas[table] = {
-                                'columns': df.columns.tolist(),
-                                'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-                                'sample_count': len(result.data),
-                                'first_row': result.data[0]
-                            }
-                        else:
-                            st.warning(f"Tabla `{table}` esta vacia.")
-                    except Exception as e:
-                        st.warning(f"No se pudo acceder a `{table}`: {str(e)[:100]}")
-                    progress_bar.progress((idx + 1) / len(all_tables))
+                        except Exception as e:
+                            st.error(f"Error de conexion: {e}")
+                            st.stop()
 
-                status_text.empty()
-                progress_bar.empty()
+                    if not schemas:
+                        st.error("No se pudo extraer datos de ninguna tabla.")
+                        st.stop()
 
-            except Exception as e:
-                st.error(f"Error de conexion: {e}")
-                st.stop()
+                    st.success(f"✅ Esquemas extraidos de {len(schemas)} tablas.")
 
-        if not schemas:
-            st.error("No se pudo extraer datos de ninguna tabla.")
-            st.stop()
+                    # ── LLAMADA A IA CON PROMPT COMPACTO ────────────────────────
+                    with st.spinner("Analizando con IA (30-60 segundos)..."):
+                        from src.ai_agent import AIFinancialAgent
+                        from datetime import date
 
-        st.success(f"✅ Esquemas extraidos de {len(schemas)} tablas.")
+                        industry_fn = selected_client.industry.replace('-', '_').replace(' ', '_')
 
-        # ── LLAMADA A IA CON PROMPT COMPACTO ────────────────────────
-        with st.spinner("Analizando con IA (30-60 segundos)..."):
-            from src.ai_agent import AIFinancialAgent
-            from datetime import date
-
-            industry_fn = selected_client.industry.replace('-', '_').replace(' ', '_')
-
-            ai_prompt = f"""Industria: {selected_client.industry}
+                        ai_prompt = f"""Industria: {selected_client.industry}
 Cliente: {selected_client.name}
 
 Esquema de base de datos (metadata):
@@ -382,77 +379,77 @@ metadata:
   generated_at: "{date.today()}"
 """
 
-            try:
-                agent = AIFinancialAgent()
-                generated_yaml = agent.generate_config_from_prompt(ai_prompt, selected_client.industry)
+                        try:
+                            agent = AIFinancialAgent()
+                            generated_yaml = agent.generate_config_from_prompt(ai_prompt, selected_client.industry)
 
-                st.success("✅ Configuracion generada.")
-                st.subheader("📄 YAML Generado")
-                st.code(generated_yaml, language='yaml')
+                            st.success("✅ Configuracion generada.")
+                            st.subheader("📄 YAML Generado")
+                            st.code(generated_yaml, language='yaml')
 
-                # Validar sintaxis
-                try:
-                    yaml.safe_load(generated_yaml)
-                    st.success("✅ YAML valido.")
-                except Exception as e:
-                    st.error(f"YAML con errores de sintaxis: {e}")
+                            # Validar sintaxis
+                            try:
+                                yaml.safe_load(generated_yaml)
+                                st.success("✅ YAML valido.")
+                            except Exception as e:
+                                st.error(f"YAML con errores de sintaxis: {e}")
 
-                # Persistir en session_state para sobrevivir reruns
-                st.session_state['yaml_to_save'] = generated_yaml
-                st.session_state['yaml_client_id'] = selected_client_id
-                st.session_state['yaml_filename'] = f"{selected_client_id}_config.yaml"
+                            # Persistir en session_state para sobrevivir reruns
+                            st.session_state['yaml_to_save'] = generated_yaml
+                            st.session_state['yaml_client_id'] = selected_client_id
+                            st.session_state['yaml_filename'] = f"{selected_client_id}_config.yaml"
 
-            except Exception as e:
-                st.error(f"Error en IA: {e}")
-                import traceback
-                with st.expander("Ver error completo"):
-                    st.code(traceback.format_exc())
+                        except Exception as e:
+                            st.error(f"Error en IA: {e}")
+                            import traceback
+                            with st.expander("Ver error completo"):
+                                st.code(traceback.format_exc())
 
-    # ── GUARDAR (persiste fuera del bloque del boton) ────────────────
-    if (st.session_state.get('yaml_to_save')
-            and st.session_state.get('yaml_client_id') == selected_client_id):
+        # ── GUARDAR (persiste fuera del bloque del boton) ────────────────
+        if (st.session_state.get('yaml_to_save')
+                and st.session_state.get('yaml_client_id') == selected_client_id):
+
+            st.markdown("---")
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                filename = st.text_input(
+                    "Nombre del archivo",
+                    value=st.session_state.get('yaml_filename', f"{selected_client_id}_config.yaml")
+                )
+            with col_b:
+                st.write("")
+                st.write("")
+                if st.button("💾 Guardar en Disco", type="primary"):
+                    output_path = f"configs/clients/{filename}"
+                    Path("configs/clients").mkdir(parents=True, exist_ok=True)
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(st.session_state['yaml_to_save'])
+                    client_mgr2.update_client(selected_client_id, config_file=output_path)
+                    st.success(f"✅ Guardado en `{output_path}`")
+                    st.balloons()
+                    st.session_state.pop('yaml_to_save', None)
 
         st.markdown("---")
-        col_a, col_b = st.columns([3, 1])
-        with col_a:
-            filename = st.text_input(
-                "Nombre del archivo",
-                value=st.session_state.get('yaml_filename', f"{selected_client_id}_config.yaml")
-            )
-        with col_b:
-            st.write("")
-            st.write("")
-            if st.button("💾 Guardar en Disco", type="primary"):
-                output_path = f"configs/clients/{filename}"
-                Path("configs/clients").mkdir(parents=True, exist_ok=True)
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(st.session_state['yaml_to_save'])
-                client_mgr2.update_client(selected_client_id, config_file=output_path)
-                st.success(f"✅ Guardado en `{output_path}`")
-                st.balloons()
-                st.session_state.pop('yaml_to_save', None)
-
-    st.markdown("---")
-    st.subheader("📁 Modelos Compilados")
-    try:
-        Path('configs/clients').mkdir(parents=True, exist_ok=True)
-        client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
-        yaml_data = []
-        for f in client_files:
-            with open(os.path.join('configs/clients', f), 'r') as file:
-                data = yaml.safe_load(file)
-                yaml_data.append({
-                    "Archivo": f,
-                    "Client ID": data.get('client', {}).get('id', 'N/A'),
-                    "Sector": data.get('client', {}).get('industry', 'N/A'),
-                    "Variables": ', '.join(list(data.get('variables', {}).keys())) if data.get('variables') else 'N/A'
-                })
-        if yaml_data:
-            st.dataframe(pd.DataFrame(yaml_data), use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay modelos parametrizados.")
-    except Exception as e:
-        st.error(f"Error al leer directorio: {e}")
+        st.subheader("📁 Modelos Compilados")
+        try:
+            Path('configs/clients').mkdir(parents=True, exist_ok=True)
+            client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
+            yaml_data = []
+            for f in client_files:
+                with open(os.path.join('configs/clients', f), 'r') as file:
+                    data = yaml.safe_load(file)
+                    yaml_data.append({
+                        "Archivo": f,
+                        "Client ID": data.get('client', {}).get('id', 'N/A'),
+                        "Sector": data.get('client', {}).get('industry', 'N/A'),
+                        "Variables": ', '.join(list(data.get('variables', {}).keys())) if data.get('variables') else 'N/A'
+                    })
+            if yaml_data:
+                st.dataframe(pd.DataFrame(yaml_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay modelos parametrizados.")
+        except Exception as e:
+            st.error(f"Error al leer directorio: {e}")
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 3: USUARIOS
