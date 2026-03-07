@@ -36,8 +36,10 @@ class DecisionPipeline:
             print(f"✅ FASE {phase_number} completada en {elapsed:.2f}s")
             return result
         except Exception as e:
+            import traceback
             print(f"❌ FASE {phase_number} falló: {str(e)}")
-            raise PipelineExecutionError(f"Pipeline detenido en Fase {phase_number}: {e}")
+            print(traceback.format_exc())
+            raise PipelineExecutionError(f"Pipeline detenido en Fase {phase_number}: {type(e).__name__}: {e}") from e
 
     def execute(self) -> dict:
         # FASE 1: Ajuste de Extracción

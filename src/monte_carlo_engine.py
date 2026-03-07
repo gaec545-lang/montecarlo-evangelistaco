@@ -375,8 +375,9 @@ class UniversalMonteCarloEngine:
         
         # Ejecutar modelo
         outcomes = []
-        business_params = self.config.get('business_parameters')
-        
+        # business_parameters es opcional — YAMLs generados por IA no lo tienen
+        business_params = self.config.get('business_parameters') or {}
+
         for idx, row in df_samples.iterrows():
             variables = row.to_dict()
             outcome = self.model_function(variables, business_params)
