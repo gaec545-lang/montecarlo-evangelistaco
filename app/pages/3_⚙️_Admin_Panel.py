@@ -108,12 +108,64 @@ with tab1:
                 st.error("Client ID solo puede contener letras, numeros y guiones bajos.")
             else:
                 if client_mgr.add_client(new_client_id, new_client_name, new_client_industry):
+                    st.success(f"✅ Cliente '{new_client_name}' registrado")
+
                     if boveda_disponible and new_supabase_url and new_supabase_key:
-                        conn_mgr.save_client_connection(
-                            new_client_id, new_supabase_url, new_supabase_key,
-                            st.session_state.username
-                        )
-                    st.success(f"✅ Cliente '{new_client_name}' creado exitosamente.")
+                        st.info("💾 Guardando credenciales en bóveda...")
+                        try:
+                            save_result = conn_mgr.save_client_connection(
+                                new_client_id, new_supabase_url, new_supabase_key,
+                                st.session_state.username
+                            )
+                            if save_result:
+                                st.success("✅ Credenciales guardadas")
+                                st.info("🔍 Validando persistencia...")
+                                test_creds = conn_mgr.get_client_connection(new_client_id)
+                                if test_creds:
+                                    st.success("✅ Credenciales verificadas y recuperables")
+                                    with st.expander("🔍 Ver detalles (parcial)"):
+                                        st.write(f"**URL guardada:** `{test_creds['url'][:50]}...`")
+                                        st.write(f"**API Key guardada:** `{test_creds['key'][:30]}...`")
+                                        checks = []
+                                        if test_creds['url'].startswith('https://'):
+                                            checks.append("✅ URL formato HTTPS")
+                                        else:
+                                            checks.append("⚠️ URL no tiene HTTPS")
+                                        if 'supabase.co' in test_creds['url']:
+                                            checks.append("✅ URL es de Supabase")
+                                        else:
+                                            checks.append("⚠️ URL no parece ser de Supabase")
+                                        if test_creds['key'].startswith('eyJ'):
+                                            checks.append("✅ API Key formato JWT")
+                                        else:
+                                            checks.append("⚠️ API Key no es JWT")
+                                        for check in checks:
+                                            st.write(check)
+                                    with st.expander("📋 Paso opcional: Habilitar auto-discovery de tablas"):
+                                        st.info("Ejecutar este SQL una sola vez en el proyecto Supabase del cliente:")
+                                        st.code("""CREATE OR REPLACE FUNCTION get_user_tables()
+RETURNS TABLE(table_name text, column_count bigint)
+LANGUAGE sql SECURITY DEFINER AS $
+  SELECT t.table_name::text, COUNT(c.column_name) as column_count
+  FROM information_schema.tables t
+  LEFT JOIN information_schema.columns c
+    ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+  WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+    AND t.table_name NOT LIKE 'pg_%' AND t.table_name NOT LIKE 'sql_%'
+  GROUP BY t.table_name ORDER BY t.table_name;
+$;
+GRANT EXECUTE ON FUNCTION get_user_tables() TO anon, authenticated;""", language='sql')
+                                        st.caption("Opcional. Sin esto el sistema usa detección por prueba directa (más lento).")
+                                else:
+                                    st.error("❌ PROBLEMA CRÍTICO: Credenciales guardadas pero no recuperables")
+                            else:
+                                st.error("❌ No se pudieron guardar las credenciales")
+                        except Exception as e:
+                            st.error(f"❌ Error guardando credenciales: {str(e)[:200]}")
+                            import traceback
+                            with st.expander("🔍 Ver error técnico"):
+                                st.code(traceback.format_exc())
+
                     st.rerun()
                 else:
                     st.error("Ya existe un cliente con ese ID.")
