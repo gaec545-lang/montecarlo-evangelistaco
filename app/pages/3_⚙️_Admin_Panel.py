@@ -254,27 +254,104 @@ with tab2:
         with st.spinner("Conectando a Supabase del cliente..."):
             try:
                 from supabase import create_client
+                import requests
                 import json
                 from datetime import date
 
                 supabase = create_client(creds['url'], creds['key'])
-
-                # Listar tablas via RPC o fallback manual
                 all_tables = []
+                detection_method = None
+
+                # ── MÉTODO 1: Postgrest root endpoint (OpenAPI schema) ──────────
                 try:
-                    tables_result = supabase.rpc('get_all_tables').execute()
-                    all_tables = [t['table_name'] for t in tables_result.data]
+                    headers = {
+                        'apikey': creds['key'],
+                        'Authorization': f"Bearer {creds['key']}"
+                    }
+                    resp = requests.get(f"{creds['url']}/", headers=headers, timeout=8)
+                    if resp.status_code == 200:
+                        schema_info = resp.json()
+                        if 'definitions' in schema_info:
+                            all_tables = list(schema_info['definitions'].keys())
+                        elif 'paths' in schema_info:
+                            all_tables = [
+                                p.strip('/') for p in schema_info['paths'].keys()
+                                if p.strip('/')
+                            ]
+                        if all_tables:
+                            detection_method = "Postgrest schema endpoint"
                 except Exception:
                     pass
 
+                # ── MÉTODO 2: RPC get_all_tables (si el cliente la creó) ────────
+                if not all_tables:
+                    try:
+                        result = supabase.rpc('get_all_tables').execute()
+                        all_tables = [t['table_name'] for t in result.data]
+                        if all_tables:
+                            detection_method = "RPC get_all_tables"
+                    except Exception:
+                        pass
+
+                # ── MÉTODO 3: Prueba directa de nombres comunes ─────────────────
+                if not all_tables:
+                    st.info("Probando tablas por nombre (puede tardar ~20s)...")
+                    candidate_tables = [
+                        'fact_costos', 'fact_ventas', 'fact_inventario', 'fact_compras',
+                        'fact_produccion', 'fact_gastos', 'fact_ingresos', 'fact_pedidos',
+                        'dim_productos', 'dim_clientes', 'dim_proveedores', 'dim_tiempo',
+                        'historico_ventas', 'historico_compras', 'historico_precios',
+                        'datos_financieros', 'datos_operativos', 'datos_ventas',
+                        'transacciones', 'movimientos', 'registros',
+                        'clientes', 'productos', 'proveedores', 'empleados',
+                        'ventas', 'compras', 'inventario', 'almacen', 'stock',
+                        'ordenes', 'pedidos', 'facturas', 'cotizaciones',
+                        'proyectos', 'servicios', 'contratos', 'presupuestos',
+                    ]
+                    prog = st.progress(0)
+                    found = []
+                    for idx, tbl in enumerate(candidate_tables):
+                        try:
+                            supabase.table(tbl).select("id").limit(1).execute()
+                            found.append(tbl)
+                        except Exception:
+                            pass
+                        prog.progress((idx + 1) / len(candidate_tables))
+                    all_tables = found
+                    if all_tables:
+                        detection_method = "prueba directa de nombres comunes"
+
+                # ── Filtrar tablas de sistema ───────────────────────────────────
+                system_prefixes = ['pg_', 'sql_', '_realtime', 'supabase_',
+                                   'auth.', 'storage.', 'realtime.']
+                all_tables = [
+                    t for t in all_tables
+                    if not any(t.startswith(p) for p in system_prefixes)
+                    and t not in ('schema_migrations', 'ar_internal_metadata')
+                ]
+
                 if all_tables:
-                    st.success(f"✅ {len(all_tables)} tablas detectadas automaticamente.")
+                    st.success(f"✅ {len(all_tables)} tablas detectadas via {detection_method}.")
                 else:
-                    st.warning("No se pudo listar tablas automaticamente.")
+                    # ── MÉTODO 4: Input manual (ultimo recurso) ─────────────────
+                    st.warning("Deteccion automatica no disponible para este proyecto.")
+                    st.info("""
+**Obtener lista de tablas manualmente:**
+1. Abre tu proyecto Supabase → SQL Editor
+2. Ejecuta:
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+AND table_type = 'BASE TABLE'
+ORDER BY table_name;
+```
+3. Copia los nombres y pegaos abajo:
+                    """)
                     table_input = st.text_area(
-                        "Introduce las tablas disponibles (una por linea):",
+                        "Tablas disponibles (una por linea)",
                         placeholder="fact_costos\nfact_ventas\nhistorico_inventario",
-                        height=120
+                        height=150
                     )
                     if table_input:
                         all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
