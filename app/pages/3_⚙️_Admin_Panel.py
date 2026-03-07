@@ -301,6 +301,19 @@ with tab2:
         _industry = selected_client.industry
         _probe_list = _industry_tables.get(_industry, []) + _common_tables
 
+        # ── FILTRO DE SEGURIDAD ──────────────────────────────────────────
+        _SYSTEM_BLACKLIST = {
+            'client_connections', 'audit_logs', 'sys_users',
+            'auth', 'storage', 'realtime', 'supabase_functions',
+            'supabase_migrations', 'pg_stat_statements',
+            'schema_migrations', 'ar_internal_metadata', 'information_schema',
+        }
+        _SYSTEM_PREFIXES = ('pg_', 'sql_', 'supabase_', 'auth.', 'storage.', '_')
+
+        def _is_safe_table(name: str) -> bool:
+            n = name.lower()
+            return n not in _SYSTEM_BLACKLIST and not any(n.startswith(p) for p in _SYSTEM_PREFIXES)
+
         # ── AUTO-DETECCIÓN ───────────────────────────────────────────────
         _session_key = f'detected_tables_{selected_client_id}'
 
@@ -349,6 +362,13 @@ with tab2:
                             _st.empty()
                             _pb.empty()
 
+                        # Aplicar filtro de seguridad a tablas detectadas
+                        _detected_raw = _detected
+                        _detected = [t for t in _detected_raw if _is_safe_table(t)]
+                        _filtered = len(_detected_raw) - len(_detected)
+                        if _filtered > 0:
+                            st.info(f"🔒 {_filtered} tablas del sistema excluidas por seguridad")
+
                         if _detected:
                             st.session_state[_session_key] = '\n'.join(_detected)
                             st.success(f"✅ {len(_detected)} tablas detectadas")
@@ -375,13 +395,19 @@ with tab2:
         if not table_input:
             st.warning("Introduce las tablas o usa Auto-detectar.")
         else:
-            all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
+            all_tables_raw = [t.strip() for t in table_input.split('\n') if t.strip()]
+
+            # ── FILTRO DE SEGURIDAD ──────────────────────────────────────
+            all_tables = [t for t in all_tables_raw if _is_safe_table(t)]
+            _manual_filtered = len(all_tables_raw) - len(all_tables)
+            if _manual_filtered > 0:
+                st.info(f"🔒 Filtro de seguridad: {_manual_filtered} tablas del sistema excluidas")
 
             if not all_tables:
-                st.error("No se detectaron tablas validas.")
+                st.error("No hay tablas validas para analizar.")
             else:
-                st.success(f"✅ {len(all_tables)} tablas para analizar")
-                with st.expander("Ver tablas detectadas"):
+                st.success(f"✅ {len(all_tables)} tablas seguras para analizar")
+                with st.expander("Ver tablas"):
                     for idx, table in enumerate(all_tables, 1):
                         st.write(f"{idx}. `{table}`")
 
@@ -394,6 +420,12 @@ with tab2:
                     creds = conn_mgr2.get_client_connection(selected_client_id)
                     if not creds:
                         st.error("Cliente sin credenciales Supabase. Configuralas en Tab 1.")
+                        st.stop()
+
+                    # Double-check de seguridad antes de enviar a IA
+                    unsafe = [t for t in all_tables if not _is_safe_table(t)]
+                    if unsafe:
+                        st.error(f"🚨 ERROR DE SEGURIDAD: Tablas del sistema detectadas: {unsafe}")
                         st.stop()
 
                     schemas = {}
