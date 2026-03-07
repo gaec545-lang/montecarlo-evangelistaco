@@ -496,8 +496,15 @@ CRITERIOS:
 3. Valores numericos con variabilidad significativa
 4. Solo tablas y columnas que EXISTEN en el schema proporcionado
 
+Segun la industria {selected_client.industry}, recomienda una metodologia de KPIs:
+- okr: Tech, startups, crecimiento acelerado
+- bsc: Empresas establecidas, estrategia corporativa
+- smart: PyMEs, claridad operativa
+- north_star: Product-driven businesses
+- operational: Operaciones dia a dia sin framework formal
+
 ESTRUCTURA OBLIGATORIA - incluir TODAS estas secciones:
-client, variables, business_model, decision_rules, simulation, metadata
+client, variables, business_model, decision_rules, simulation, kpi_methodology, metadata
 
 RETORNA SOLO EL YAML (sin markdown, sin explicaciones):
 
@@ -561,6 +568,8 @@ decision_rules:
 simulation:
   iterations: 10000
   confidence_level: 0.95
+
+kpi_methodology: "operational"  # okr, bsc, smart, north_star, operational
 
 metadata:
   generated_by: "AI Agent v1.0"

@@ -317,6 +317,72 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
     st.subheader("📊 Distribucion de Resultados")
     st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
 
+    # ── KPIs POR METODOLOGÍA ──────────────────────────────────────────────
+    st.markdown("---")
+    try:
+        from src.projection_engine import ProjectionEngine
+        methodology = config.get('kpi_methodology', 'operational')
+        proj = ProjectionEngine({'statistics': stats}, methodology=methodology)
+        kpis = proj.generate_kpis_by_methodology(industry=industry)
+        st.subheader(f"📐 KPIs — {kpis['methodology']}")
+
+        if methodology == 'okr':
+            for obj in kpis.get('objectives', []):
+                st.markdown(f"**🎯 {obj['objective']}**")
+                for kr in obj.get('key_results', []):
+                    status_icon = '🟢' if kr['status'] == 'on_track' else '🔴'
+                    col1, col2, col3 = st.columns(3)
+                    col1.write(f"{status_icon} {kr['kr']}")
+                    col2.metric("Actual", kr['current'])
+                    col3.metric("Target", kr['target'])
+
+        elif methodology == 'bsc':
+            tabs_bsc = st.tabs([p['name'] for p in kpis['perspectives'].values()])
+            for tab, perspective in zip(tabs_bsc, kpis['perspectives'].values()):
+                with tab:
+                    for kpi in perspective['kpis']:
+                        col1, col2 = st.columns(2)
+                        col1.metric(kpi['kpi'], kpi['value'])
+                        col2.write(f"**Interpretación:** {kpi['interpretation']}")
+
+        elif methodology == 'smart':
+            for kpi in kpis.get('kpis', []):
+                status_icon = '🟢' if kpi['status'] == 'on_track' else '🔴'
+                with st.expander(f"{status_icon} {kpi['name']} — {kpi['current_value']}"):
+                    st.write(f"**S — Específico:** {kpi['specific']}")
+                    st.write(f"**M — Medible:** {kpi['measurable']}")
+                    st.write(f"**A — Alcanzable:** {kpi['achievable']}")
+                    st.write(f"**R — Relevante:** {kpi['relevant']}")
+                    st.write(f"**T — Tiempo:** {kpi['time_bound']}")
+
+        elif methodology == 'north_star':
+            ns = kpis.get('north_star_metric', {})
+            st.metric(f"⭐ {ns.get('name', '')}", ns.get('value', ''))
+            st.caption(ns.get('definition', ''))
+            st.markdown("**Input Metrics:**")
+            for im in kpis.get('input_metrics', []):
+                col1, col2 = st.columns(2)
+                col1.metric(im['name'], im['value'], f"Impacto: {im['impact_on_north_star']}")
+                col2.write(f"**Palanca:** {im['lever']}")
+
+        else:  # operational
+            for cat in kpis.get('categories', {}).values():
+                st.markdown(f"**{cat['name']}**")
+                rows = []
+                for m in cat.get('metrics', []):
+                    row = {'KPI': m['metric'], 'Valor': m['value']}
+                    if 'interpretation' in m:
+                        row['Interpretacion'] = m['interpretation']
+                    if 'unit' in m:
+                        row['Unidad'] = m['unit']
+                    rows.append(row)
+                if rows:
+                    import pandas as _pd
+                    st.dataframe(_pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.warning(f"⚠️ No se pudieron generar KPIs: {e}")
+
 
 # ═══════════════════════════════════════════════════════════════
 # APLICACION PRINCIPAL
