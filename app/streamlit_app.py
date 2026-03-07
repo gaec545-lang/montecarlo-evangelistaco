@@ -181,7 +181,8 @@ def login_page():
 # VISTAS
 # ═══════════════════════════════════════════════════════════════
 
-def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, config):
+def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, config,
+                    consultant_name: str = None, client_id: str = None):
     client_name = config.get('client.name', 'Cliente')
     st.markdown(f"<h2 style='color: #1f77b4;'>📊 Dashboard Ejecutivo - {client_name}</h2>",
                 unsafe_allow_html=True)
@@ -232,6 +233,26 @@ def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, co
         st.info("💡 Para un analisis detallado, contacta a tu consultor de Evangelista & Co.")
     else:
         st.success("✅ No hay alertas activas. Todos los indicadores dentro de parametros normales.")
+
+    st.markdown("---")
+    st.info("""
+**💡 Nota para Ejecutivos:**
+
+Está visualizando el diagnóstico de riesgo de su operación basado en simulación Monte Carlo.
+
+Para acceder al **plan de acción detallado** con estrategias de mitigación, análisis de ROI
+y recomendaciones priorizadas, contacte a su consultor asignado.
+
+**Su consultor tiene acceso a:**
+- ✅ Recomendaciones prescriptivas con priorización
+- ✅ Pasos de acción específicos
+- ✅ Análisis de impacto financiero (ROI, payback)
+- ✅ Análisis técnico de sensibilidad de variables
+    """)
+    if consultant_name:
+        st.success(f"👤 **Consultor asignado:** {consultant_name}")
+    else:
+        st.warning("⚠️ No tiene consultor asignado. Contacte al administrador.")
 
     st.markdown("---")
     st.subheader("📊 Distribucion de Resultados")
@@ -470,7 +491,9 @@ def main():
         st.caption(f"• Simulaciones: {n_sims:,}")
 
     if role == "Ejecutivo":
-        vista_ejecutivo(stats, triggers, results, config)
+        consultant_name = user_mgr.get_consultant_for_client(selected_client_id)
+        vista_ejecutivo(stats, triggers, results, config,
+                        consultant_name=consultant_name, client_id=selected_client_id)
     else:
         vista_consultor(stats, triggers, sensitivity, results, config,
                         business_narrative, recommendations)
