@@ -8,5 +8,8 @@ configs/clients/*
 __pycache__/
 *.pyc
 
+# Ignorar logs de auditoria (generados en runtime)
+logs/
+
 # Ignorar archivos de sistema operativo
 .DS_Store
