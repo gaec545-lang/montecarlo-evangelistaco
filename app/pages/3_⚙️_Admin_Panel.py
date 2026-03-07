@@ -207,7 +207,6 @@ with tab1:
 # ═══════════════════════════════════════════════════════════════
 with tab2:
     st.header("🤖 YAML Builder con IA")
-    st.markdown("El Agente IA analiza la base de datos del cliente y genera la configuracion matematica completa.")
 
     client_mgr2 = ClientManager()
     all_clients2 = client_mgr2.get_all_clients()
@@ -223,161 +222,92 @@ with tab2:
         boveda2 = False
 
     client_options = {c.client_id: f"{c.name} ({c.client_id})" for c in all_clients2}
-
     selected_client_id = st.selectbox(
         "Selecciona el cliente a configurar",
         options=list(client_options.keys()),
         format_func=lambda x: client_options[x]
     )
-
     selected_client = client_mgr2.get_client(selected_client_id)
 
     st.info(f"""
-    **Cliente:** {selected_client.name}
-    **Industria:** {selected_client.industry}
-    **Config actual:** `{selected_client.config_file}`
+**Cliente:** {selected_client.name} | **Industria:** {selected_client.industry}
+
+**Instrucciones:**
+1. Ve al proyecto Supabase del cliente → **Table Editor** (menu izquierdo)
+2. Copia los nombres de las tablas que contienen datos del negocio
+3. Pegaos abajo (una por linea) e ignora tablas de sistema: `auth`, `storage`, `realtime`
     """)
 
-    # --- Extraccion de tablas y generacion de YAML ---
-    if st.button("🔍 Analizar Base de Datos y Generar Config", type="primary"):
+    # ── INPUT DIRECTO DE TABLAS ──────────────────────────────────────
+    table_input = st.text_area(
+        "Tablas disponibles (una por linea)",
+        placeholder="ventas\ncompras\ninventario\nproductos\nclientes",
+        height=180,
+        help="Solo tablas con datos de operacion. Ejemplo: ventas, compras, inventario, productos"
+    )
+
+    if not table_input:
+        st.warning("Introduce las tablas para continuar.")
+        st.stop()
+
+    all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
+
+    if not all_tables:
+        st.error("No se detectaron tablas validas.")
+        st.stop()
+
+    st.success(f"✅ {len(all_tables)} tablas para analizar")
+    with st.expander("Ver tablas detectadas"):
+        for idx, table in enumerate(all_tables, 1):
+            st.write(f"{idx}. `{table}`")
+
+    # ── BOTÓN PRINCIPAL ──────────────────────────────────────────────
+    if st.button("🤖 Generar Configuracion con IA", type="primary"):
         if not boveda2:
-            st.error("La boveda de credenciales no esta disponible (DATABASE_URL requerida).")
+            st.error("Boveda no disponible (DATABASE_URL requerida).")
             st.stop()
 
         creds = conn_mgr2.get_client_connection(selected_client_id)
         if not creds:
-            st.error("Este cliente no tiene credenciales Supabase. Configuralas en el Tab 1.")
+            st.error("Cliente sin credenciales Supabase. Configuralas en Tab 1.")
             st.stop()
 
         schemas = {}
 
-        with st.spinner("Conectando a Supabase del cliente..."):
+        # ── EXTRACCION LIGERA: solo 3 filas por tabla ────────────────
+        with st.spinner("Conectando a Supabase y extrayendo esquemas..."):
             try:
                 from supabase import create_client
-                import requests
                 import json
-                from datetime import date
 
                 supabase = create_client(creds['url'], creds['key'])
-                all_tables = []
-                detection_method = None
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
-                # ── MÉTODO 1: Postgrest root endpoint (OpenAPI schema) ──────────
-                try:
-                    headers = {
-                        'apikey': creds['key'],
-                        'Authorization': f"Bearer {creds['key']}"
-                    }
-                    resp = requests.get(f"{creds['url']}/", headers=headers, timeout=8)
-                    if resp.status_code == 200:
-                        schema_info = resp.json()
-                        if 'definitions' in schema_info:
-                            all_tables = list(schema_info['definitions'].keys())
-                        elif 'paths' in schema_info:
-                            all_tables = [
-                                p.strip('/') for p in schema_info['paths'].keys()
-                                if p.strip('/')
-                            ]
-                        if all_tables:
-                            detection_method = "Postgrest schema endpoint"
-                except Exception:
-                    pass
-
-                # ── MÉTODO 2: RPC get_all_tables (si el cliente la creó) ────────
-                if not all_tables:
+                for idx, table in enumerate(all_tables):
+                    status_text.text(f"Analizando {table}... ({idx + 1}/{len(all_tables)})")
                     try:
-                        result = supabase.rpc('get_all_tables').execute()
-                        all_tables = [t['table_name'] for t in result.data]
-                        if all_tables:
-                            detection_method = "RPC get_all_tables"
-                    except Exception:
-                        pass
+                        result = supabase.table(table).select("*").limit(3).execute()
+                        if result.data:
+                            df = pd.DataFrame(result.data)
+                            schemas[table] = {
+                                'columns': df.columns.tolist(),
+                                'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+                                'sample_count': len(result.data),
+                                'first_row': result.data[0]
+                            }
+                        else:
+                            st.warning(f"Tabla `{table}` esta vacia.")
+                    except Exception as e:
+                        st.warning(f"No se pudo acceder a `{table}`: {str(e)[:100]}")
+                    progress_bar.progress((idx + 1) / len(all_tables))
 
-                # ── MÉTODO 3: Prueba directa de nombres comunes ─────────────────
-                if not all_tables:
-                    st.info("Probando tablas por nombre (puede tardar ~20s)...")
-                    candidate_tables = [
-                        'fact_costos', 'fact_ventas', 'fact_inventario', 'fact_compras',
-                        'fact_produccion', 'fact_gastos', 'fact_ingresos', 'fact_pedidos',
-                        'dim_productos', 'dim_clientes', 'dim_proveedores', 'dim_tiempo',
-                        'historico_ventas', 'historico_compras', 'historico_precios',
-                        'datos_financieros', 'datos_operativos', 'datos_ventas',
-                        'transacciones', 'movimientos', 'registros',
-                        'clientes', 'productos', 'proveedores', 'empleados',
-                        'ventas', 'compras', 'inventario', 'almacen', 'stock',
-                        'ordenes', 'pedidos', 'facturas', 'cotizaciones',
-                        'proyectos', 'servicios', 'contratos', 'presupuestos',
-                    ]
-                    prog = st.progress(0)
-                    found = []
-                    for idx, tbl in enumerate(candidate_tables):
-                        try:
-                            supabase.table(tbl).select("id").limit(1).execute()
-                            found.append(tbl)
-                        except Exception:
-                            pass
-                        prog.progress((idx + 1) / len(candidate_tables))
-                    all_tables = found
-                    if all_tables:
-                        detection_method = "prueba directa de nombres comunes"
-
-                # ── Filtrar tablas de sistema ───────────────────────────────────
-                system_prefixes = ['pg_', 'sql_', '_realtime', 'supabase_',
-                                   'auth.', 'storage.', 'realtime.']
-                all_tables = [
-                    t for t in all_tables
-                    if not any(t.startswith(p) for p in system_prefixes)
-                    and t not in ('schema_migrations', 'ar_internal_metadata')
-                ]
-
-                if all_tables:
-                    st.success(f"✅ {len(all_tables)} tablas detectadas via {detection_method}.")
-                else:
-                    # ── MÉTODO 4: Input manual (ultimo recurso) ─────────────────
-                    st.warning("Deteccion automatica no disponible para este proyecto.")
-                    st.info("""
-**Obtener lista de tablas manualmente:**
-1. Abre tu proyecto Supabase → SQL Editor
-2. Ejecuta:
-```sql
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema = 'public'
-AND table_type = 'BASE TABLE'
-ORDER BY table_name;
-```
-3. Copia los nombres y pegaos abajo:
-                    """)
-                    table_input = st.text_area(
-                        "Tablas disponibles (una por linea)",
-                        placeholder="fact_costos\nfact_ventas\nhistorico_inventario",
-                        height=150
-                    )
-                    if table_input:
-                        all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
-                    else:
-                        st.stop()
+                status_text.empty()
+                progress_bar.empty()
 
             except Exception as e:
-                st.error(f"Error conectando a Supabase: {e}")
+                st.error(f"Error de conexion: {e}")
                 st.stop()
-
-        with st.spinner(f"Extrayendo esquema de {len(all_tables)} tablas..."):
-            progress = st.progress(0)
-            for idx, table in enumerate(all_tables):
-                try:
-                    result = supabase.table(table).select("*").limit(100).execute()
-                    if result.data:
-                        df = pd.DataFrame(result.data)
-                        schemas[table] = {
-                            'columns': df.columns.tolist(),
-                            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-                            'sample_rows': len(result.data),
-                            'sample_data': df.head(3).to_dict('records')
-                        }
-                except Exception as e:
-                    st.warning(f"No se pudo acceder a `{table}`: {str(e)[:80]}")
-                progress.progress((idx + 1) / len(all_tables))
 
         if not schemas:
             st.error("No se pudo extraer datos de ninguna tabla.")
@@ -385,21 +315,23 @@ ORDER BY table_name;
 
         st.success(f"✅ Esquemas extraidos de {len(schemas)} tablas.")
 
-        with st.spinner("Llama 3.3 analizando vectores de riesgo..."):
+        # ── LLAMADA A IA CON PROMPT COMPACTO ────────────────────────
+        with st.spinner("Analizando con IA (30-60 segundos)..."):
             from src.ai_agent import AIFinancialAgent
             from datetime import date
 
-            ai_prompt = f"""
-Industria del cliente: {selected_client.industry}
-Cliente ID: {selected_client_id}
-Nombre: {selected_client.name}
+            industry_fn = selected_client.industry.replace('-', '_').replace(' ', '_')
 
-Esquema completo de la base de datos:
+            ai_prompt = f"""Industria: {selected_client.industry}
+Cliente: {selected_client.name}
+
+Esquema de base de datos:
 {json.dumps(schemas, indent=2, ensure_ascii=False)}
 
-TAREA: Genera un archivo YAML de configuracion para el sistema Sentinel de Decision Intelligence.
+TAREA: Identifica las 2-4 variables de riesgo mas importantes para la industria {selected_client.industry}.
+Para cada variable usa columnas reales del esquema (fecha/timestamp y valor numerico).
 
-El YAML debe tener esta estructura exacta (respeta los nombres de claves):
+RETORNA SOLO EL YAML (sin markdown, sin explicaciones):
 
 client:
   id: "{selected_client_id}"
@@ -410,25 +342,19 @@ simulation:
   iterations: 10000
 
 variables:
-  nombre_variable_1:
-    description: "Descripcion clara"
+  nombre_variable:
+    description: "Descripcion"
+    sql_table: "tabla_exacta"
+    date_column: "columna_fecha"
+    value_column: "columna_valor"
     distribution: "normal"
     params:
       mean: 0.0
       std: 0.0
 
-  nombre_variable_2:
-    description: "..."
-    distribution: "triangular"
-    params:
-      min: 0.0
-      mode: 0.0
-      max: 0.0
-
 business_model: |
-  def modelo_{selected_client.industry.replace('-', '_').replace(' ', '_')}(variables, config):
+  def modelo_{industry_fn}(variables, params):
       resultado = 0.0
-      # Combinar variables para calcular resultado financiero
       return resultado
 
 thresholds:
@@ -437,61 +363,61 @@ thresholds:
   margin_protection: 0.05
 
 metadata:
-  reasoning: "Explicacion de la seleccion de variables"
-  generated_by: "Sentinel AI Agent"
   generated_at: "{date.today()}"
-
-IMPORTANTE: Solo YAML puro. Sin markdown. Sin explicaciones adicionales.
 """
 
             try:
                 agent = AIFinancialAgent()
                 generated_yaml = agent.generate_config_from_prompt(ai_prompt, selected_client.industry)
 
-                st.success("✅ Configuracion generada por IA.")
+                st.success("✅ Configuracion generada.")
                 st.subheader("📄 YAML Generado")
                 st.code(generated_yaml, language='yaml')
 
+                # Validar sintaxis
                 try:
                     yaml.safe_load(generated_yaml)
                     st.success("✅ YAML valido.")
                 except Exception as e:
-                    st.error(f"❌ YAML invalido: {e}")
+                    st.error(f"YAML con errores de sintaxis: {e}")
 
-                # Guardar
-                col_a, col_b = st.columns([3, 1])
-                with col_a:
-                    filename = st.text_input(
-                        "Nombre del archivo",
-                        value=f"{selected_client_id}_config.yaml"
-                    )
-
-                # Guardado via session_state para evitar re-run al escribir el text_input
-                if 'yaml_to_save' not in st.session_state:
-                    st.session_state.yaml_to_save = None
-                st.session_state.yaml_to_save = generated_yaml
-                st.session_state.yaml_filename = filename
-                st.session_state.yaml_client_id = selected_client_id
+                # Persistir en session_state para sobrevivir reruns
+                st.session_state['yaml_to_save'] = generated_yaml
+                st.session_state['yaml_client_id'] = selected_client_id
+                st.session_state['yaml_filename'] = f"{selected_client_id}_config.yaml"
 
             except Exception as e:
-                st.error(f"Error en el agente IA: {e}")
+                st.error(f"Error en IA: {e}")
                 import traceback
-                with st.expander("Detalle del error"):
+                with st.expander("Ver error completo"):
                     st.code(traceback.format_exc())
 
-    # Boton de guardado (fuera del bloque condicional para persistir)
-    if st.session_state.get('yaml_to_save') and st.session_state.get('yaml_client_id') == selected_client_id:
-        if st.button("💾 Guardar Config en Disco", type="primary"):
-            output_path = f"configs/clients/{st.session_state.yaml_filename}"
-            Path("configs/clients").mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(st.session_state.yaml_to_save)
-            client_mgr2.update_client(selected_client_id, config_file=output_path)
-            st.success(f"✅ Guardado en `{output_path}`")
-            st.session_state.yaml_to_save = None
+    # ── GUARDAR (persiste fuera del bloque del boton) ────────────────
+    if (st.session_state.get('yaml_to_save')
+            and st.session_state.get('yaml_client_id') == selected_client_id):
+
+        st.markdown("---")
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            filename = st.text_input(
+                "Nombre del archivo",
+                value=st.session_state.get('yaml_filename', f"{selected_client_id}_config.yaml")
+            )
+        with col_b:
+            st.write("")
+            st.write("")
+            if st.button("💾 Guardar en Disco", type="primary"):
+                output_path = f"configs/clients/{filename}"
+                Path("configs/clients").mkdir(parents=True, exist_ok=True)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(st.session_state['yaml_to_save'])
+                client_mgr2.update_client(selected_client_id, config_file=output_path)
+                st.success(f"✅ Guardado en `{output_path}`")
+                st.balloons()
+                st.session_state.pop('yaml_to_save', None)
 
     st.markdown("---")
-    st.subheader("📁 Modelos Financieros Compilados")
+    st.subheader("📁 Modelos Compilados")
     try:
         Path('configs/clients').mkdir(parents=True, exist_ok=True)
         client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
@@ -510,7 +436,7 @@ IMPORTANTE: Solo YAML puro. Sin markdown. Sin explicaciones adicionales.
         else:
             st.info("No hay modelos parametrizados.")
     except Exception as e:
-        st.error(f"Error al leer directorio de clientes: {e}")
+        st.error(f"Error al leer directorio: {e}")
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 3: USUARIOS
