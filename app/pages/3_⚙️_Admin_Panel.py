@@ -280,25 +280,100 @@ with tab2:
         )
         selected_client = client_mgr2.get_client(selected_client_id)
 
-        st.info(f"""
-**Cliente:** {selected_client.name} | **Industria:** {selected_client.industry}
+        st.info(f"**Cliente:** {selected_client.name} | **Industria:** {selected_client.industry}")
 
-**Instrucciones:**
-1. Ve al proyecto Supabase del cliente → **Table Editor** (menu izquierdo)
-2. Copia los nombres de las tablas que contienen datos del negocio
-3. Pegaos abajo (una por linea) e ignora tablas de sistema: `auth`, `storage`, `realtime`
-    """)
+        # ── TABLAS POR INDUSTRIA + COMUNES ──────────────────────────────
+        _industry_tables = {
+            'textil':       ['produccion_textil', 'materia_prima', 'telas', 'rollos'],
+            'alimentos':    ['recetas', 'ingredientes', 'lotes', 'caducidad'],
+            'construccion': ['proyectos', 'materiales', 'obras', 'contratos'],
+            'retail':       ['tiendas', 'pos', 'promociones', 'descuentos'],
+            'manufactura':  ['maquinas', 'turnos', 'produccion', 'mantenimiento'],
+        }
+        _common_tables = [
+            'ventas', 'compras', 'inventario', 'productos', 'clientes',
+            'gastos', 'ingresos', 'ordenes', 'pedidos', 'facturas',
+            'fact_ventas', 'fact_compras', 'fact_inventario', 'fact_produccion', 'fact_costos',
+            'historico_ventas', 'historico_precios', 'historico_stock',
+            'dim_productos', 'dim_clientes', 'dim_tiempo',
+            'venta', 'compra', 'producto', 'cliente', 'factura', 'orden', 'pedido', 'gasto', 'ingreso',
+        ]
+        _industry = selected_client.industry
+        _probe_list = _industry_tables.get(_industry, []) + _common_tables
 
-        # ── INPUT DIRECTO DE TABLAS ──────────────────────────────────────
+        # ── AUTO-DETECCIÓN ───────────────────────────────────────────────
+        _session_key = f'detected_tables_{selected_client_id}'
+
+        col_auto, col_clear = st.columns([2, 1])
+        with col_auto:
+            if st.button("🔍 Auto-detectar tablas", help="Conecta a Supabase y detecta tablas automáticamente"):
+                if not boveda2:
+                    st.error("Bóveda no disponible.")
+                else:
+                    _creds_auto = conn_mgr2.get_client_connection(selected_client_id)
+                    if not _creds_auto:
+                        st.error("Sin credenciales Supabase. Configúralas en Tab 1.")
+                    else:
+                        from supabase import create_client as _create_client
+                        _sb = _create_client(_creds_auto['url'], _creds_auto['key'])
+                        _detected = []
+
+                        # Método 1: RPC get_user_tables()
+                        try:
+                            _rpc = _sb.rpc('get_user_tables').execute()
+                            if _rpc.data:
+                                _detected = [r['table_name'] for r in _rpc.data]
+                                st.success(f"✅ {len(_detected)} tablas via RPC")
+                        except Exception:
+                            pass
+
+                        # Método 2: Prueba directa con lista inteligente
+                        if not _detected:
+                            if _industry in _industry_tables:
+                                st.info(f"🎯 Priorizando tablas de industria: {_industry}")
+                            _pb = st.progress(0)
+                            _st = st.empty()
+                            _mc1, _mc2 = st.columns(2)
+                            _found_slot = _mc1.empty()
+                            _tested_slot = _mc2.empty()
+                            for _i, _tbl in enumerate(_probe_list):
+                                _tested_slot.metric("Probadas", f"{_i+1}/{len(_probe_list)}")
+                                _found_slot.metric("Encontradas", len(_detected))
+                                _st.text(f"Probando: {_tbl}...")
+                                try:
+                                    _sb.table(_tbl).select("*").limit(1).execute()
+                                    _detected.append(_tbl)
+                                except Exception:
+                                    pass
+                                _pb.progress((_i + 1) / len(_probe_list))
+                            _st.empty()
+                            _pb.empty()
+
+                        if _detected:
+                            st.session_state[_session_key] = '\n'.join(_detected)
+                            st.success(f"✅ {len(_detected)} tablas detectadas")
+                        else:
+                            st.warning("No se detectaron tablas. Introdúcelas manualmente.")
+                        st.rerun()
+        with col_clear:
+            if st.button("🗑️ Limpiar", help="Limpiar lista de tablas"):
+                st.session_state.pop(_session_key, None)
+                st.rerun()
+
+        # ── INPUT DE TABLAS (manual o pre-llenado por auto-detección) ────
+        if _session_key not in st.session_state:
+            st.session_state[_session_key] = ''
+
         table_input = st.text_area(
             "Tablas disponibles (una por linea)",
+            key=_session_key,
             placeholder="ventas\ncompras\ninventario\nproductos\nclientes",
             height=180,
-            help="Solo tablas con datos de operacion. Ejemplo: ventas, compras, inventario, productos"
+            help="Auto-detectadas o escríbelas manualmente. Ignora tablas de sistema: auth, storage, realtime"
         )
 
         if not table_input:
-            st.warning("Introduce las tablas para continuar.")
+            st.warning("Introduce las tablas o usa Auto-detectar.")
         else:
             all_tables = [t.strip() for t in table_input.split('\n') if t.strip()]
 
