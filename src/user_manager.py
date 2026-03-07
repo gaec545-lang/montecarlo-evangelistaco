@@ -3,7 +3,7 @@ import bcrypt
 import logging
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Dict, Optional
 import os
 import re
 
