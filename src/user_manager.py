@@ -1,7 +1,7 @@
 import yaml
 import bcrypt
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime, timedelta
 from typing import List, Optional
 import os
@@ -28,7 +28,8 @@ class User:
     created_by: Optional[str]
     failed_attempts: int = 0
     locked_until: Optional[str] = None
-    client_id: Optional[str] = None 
+    client_id: Optional[str] = None
+    assigned_clients: Optional[List[str]] = None  # Para Consultores: lista de client_ids
 
 class UserManager:
     def __init__(self, config_path: str = 'configs/users.yaml'):
@@ -149,4 +150,52 @@ class UserManager:
         if len(data['users']) < initial_len:
             self._save_users(data)
             return True
+        return False
+
+    # ═══════════════════════════════════════════════════════════════
+    # GESTIÓN DE ASIGNACIÓN CONSULTOR ↔ CLIENTE
+    # ═══════════════════════════════════════════════════════════════
+
+    def get_clients_for_consultant(self, username: str) -> List[str]:
+        """Retorna lista de client_ids asignados a un consultor."""
+        data = self._load_users()
+        for user in data['users']:
+            if user.get('username') == username:
+                return user.get('assigned_clients') or []
+        return []
+
+    def get_consultant_for_client(self, client_id: str) -> Optional[str]:
+        """Retorna el username del primer consultor asignado a un cliente."""
+        data = self._load_users()
+        for user in data['users']:
+            if user.get('role') in ('Consultor', 'Admin'):
+                if client_id in (user.get('assigned_clients') or []):
+                    return user.get('username')
+        return None
+
+    def assign_client_to_consultant(self, consultant_username: str, client_id: str) -> bool:
+        """Agrega client_id a la lista de clientes asignados de un consultor."""
+        data = self._load_users()
+        for user in data['users']:
+            if user.get('username') == consultant_username and user.get('role') in ('Consultor', 'Admin'):
+                if 'assigned_clients' not in user or user['assigned_clients'] is None:
+                    user['assigned_clients'] = []
+                if client_id not in user['assigned_clients']:
+                    user['assigned_clients'].append(client_id)
+                self._save_users(data)
+                logging.info(f"CLIENT_ASSIGNED | client={client_id} | consultant={consultant_username}")
+                return True
+        return False
+
+    def unassign_client_from_consultant(self, consultant_username: str, client_id: str) -> bool:
+        """Quita client_id de la lista de clientes asignados de un consultor."""
+        data = self._load_users()
+        for user in data['users']:
+            if user.get('username') == consultant_username:
+                assigned = user.get('assigned_clients') or []
+                if client_id in assigned:
+                    assigned.remove(client_id)
+                    user['assigned_clients'] = assigned
+                    self._save_users(data)
+                    return True
         return False

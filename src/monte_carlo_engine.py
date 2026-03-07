@@ -281,31 +281,49 @@ class UniversalMonteCarloEngine:
             raise ValueError(f"❌ Distribución no soportada: {dist_type}")
     
     def _get_fallback_params(self, variable_name: str, dist_config: dict) -> dict:
-        """Obtiene parámetros de fallback"""
+        """Obtiene parametros de fallback.
+
+        Soporta dos formatos:
+        - Absoluto (YAML Builder / IA): min, mode, max / mean, std / mean, std_dev
+        - Porcentual (templates legacy): min_pct, mode_pct, max_pct
+        """
         fallback = dist_config.get('fallback', {})
         current_prices = self.config.get('current_prices', {})
         current_value = current_prices.get(variable_name, 100)
-        
+
         dist_type = dist_config['type']
-        
+
         if dist_type == 'normal':
             mean = fallback.get('mean', current_value)
-            std = fallback.get('std', current_value * 0.1)
+            # Acepta tanto 'std' como 'std_dev' (formato YAML Builder)
+            std = fallback.get('std', fallback.get('std_dev', current_value * 0.1))
             return {'mean': mean, 'std': std}
-        
+
         elif dist_type == 'triangular':
+            # Formato absoluto (YAML Builder / IA): valores directos
+            if 'min' in fallback and 'max' in fallback:
+                return {
+                    'min': fallback['min'],
+                    'mode': fallback.get('mode', (fallback['min'] + fallback['max']) / 2),
+                    'max': fallback['max']
+                }
+            # Formato porcentual (templates legacy)
             min_pct = fallback.get('min_pct', -0.10)
             mode_pct = fallback.get('mode_pct', 0.00)
             max_pct = fallback.get('max_pct', 0.15)
-            
             return {
                 'min': current_value * (1 + min_pct),
                 'mode': current_value * (1 + mode_pct),
                 'max': current_value * (1 + max_pct)
             }
-        
+
+        elif dist_type == 'uniform':
+            if 'min' in fallback and 'max' in fallback:
+                return {'min': fallback['min'], 'max': fallback['max']}
+            return {'min': current_value * 0.9, 'max': current_value * 1.1}
+
         else:
-            raise ValueError(f"❌ No hay fallback para distribución: {dist_type}")
+            raise ValueError(f"No hay fallback para distribucion: {dist_type}")
     
     def run(self) -> pd.DataFrame:
         """
@@ -314,7 +332,8 @@ class UniversalMonteCarloEngine:
         Returns:
             DataFrame con resultados
         """
-        n_sims = self.config.get('simulation.n_simulations', 10000)
+        n_sims = self.config.get('simulation.iterations',
+                    self.config.get('simulation.n_simulations', 10000))
         seed = self.config.get('simulation.seed')
         
         if seed:

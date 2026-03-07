@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, Column, String, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
+from typing import Optional, Dict
 import streamlit as st
 from src.security import encrypt_data, decrypt_data
 
@@ -74,6 +75,35 @@ class ConnectionManager:
         record = self.session.query(ClientConnection).filter_by(client_id=client_id).first()
         if not record:
             raise ValueError(f"No hay conexión registrada para el cliente {client_id}")
-        
+
         decrypted_data = decrypt_data(record.encrypted_uri)
         return json.loads(decrypted_data)
+
+    # ═══════════════════════════════════════════════════════════════
+    # MÉTODOS DE CLIENTE (ALIASES MULTI-TENANT)
+    # ═══════════════════════════════════════════════════════════════
+
+    def save_client_connection(self, client_id: str, supabase_url: str,
+                               supabase_key: str, username: str = "system") -> bool:
+        """Guarda o actualiza credenciales Supabase de un cliente en la boveda."""
+        return self.save_api_connection(client_id, supabase_url, supabase_key, username)
+
+    def get_client_connection(self, client_id: str) -> Optional[Dict]:
+        """Obtiene credenciales Supabase de un cliente. Retorna None si no existen."""
+        try:
+            return self.get_api_connection(client_id)
+        except ValueError:
+            return None
+
+    def delete_client_connection(self, client_id: str) -> bool:
+        """Elimina credenciales de un cliente de la boveda."""
+        try:
+            record = self.session.query(ClientConnection).filter_by(client_id=client_id).first()
+            if record:
+                self.session.delete(record)
+                self.session.commit()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error al eliminar conexion: {e}")
+            return False

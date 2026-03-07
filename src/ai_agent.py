@@ -44,6 +44,45 @@ class AIFinancialAgent:
         self.client = Groq(api_key=self.api_key)
         self.model = "llama-3.3-70b-versatile" # El mismo motor potente de tu web
 
+    def generate_config_from_prompt(self, prompt: str, industry: str) -> str:
+        """
+        Genera configuracion YAML completa desde un prompt detallado con esquema de BD.
+
+        Returns:
+            str: Contenido YAML valido listo para guardar en disco.
+        """
+        system_prompt = (
+            "Eres un experto en analisis financiero cuantitativo y configuracion de sistemas Monte Carlo. "
+            "Tu tarea es generar archivos YAML validos y completos para el sistema Sentinel. "
+            "Responde EXCLUSIVAMENTE con el YAML puro. "
+            "Sin delimitadores markdown (```yaml), sin texto introductorio, sin explicaciones adicionales. "
+            "El primer caracter de tu respuesta debe ser 'c' (de 'client:')."
+        )
+
+        logging.info(f"AI Agent generando config YAML para industria: {industry}")
+
+        try:
+            response = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                model=self.model,
+                temperature=0.1,
+            )
+            raw = response.choices[0].message.content.strip()
+
+            # Limpiar delimitadores markdown si el modelo los incluye de todas formas
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                raw = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+
+            return raw
+
+        except Exception as e:
+            logging.error(f"Fallo en generate_config_from_prompt: {e}")
+            raise
+
     def analyze_schema_and_build_model(self, industry: str, columns: list) -> dict:
         logging.info(f"AI Agent analizando esquema para sector {industry}...")
 

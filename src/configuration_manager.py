@@ -17,23 +17,32 @@ class ConfigurationManager:
     hace merge y proporciona acceso fácil a parámetros.
     """
     
-    def __init__(self, template: str, client_config: str):
+    def __init__(self, template_or_config: str, client_config: str = None):
         """
-        Inicializa el gestor de configuración
-        
+        Inicializa el gestor de configuracion.
+
+        Modos de uso:
+          - Dos archivos: ConfigurationManager('templates/alimentos.yaml', 'clients/x_config.yaml')
+            El template es base y el cliente hace override.
+          - Un archivo:   ConfigurationManager('clients/x_config.yaml')
+            El archivo es self-contained (generado por YAML Builder).
+
         Args:
-            template: Ruta a archivo YAML de template (ej: 'templates/alimentos.yaml')
-            client_config: Ruta a archivo YAML de configuración cliente
+            template_or_config: Ruta al template (modo dos archivos) o config completa (modo uno).
+            client_config: Ruta al YAML del cliente (solo en modo dos archivos).
         """
-        self.template_path = template
-        self.client_config_path = client_config
-        
-        # Cargar archivos
-        self.template = self._load_yaml(template)
-        self.client = self._load_yaml(client_config)
-        
-        # Merge (cliente override template)
-        self.config = self._merge_configs(self.template, self.client)
+        if client_config is None:
+            # Modo single-file: el primer argumento ES la config completa
+            self.template_path = None
+            self.client_config_path = template_or_config
+            self.config = self._load_yaml(template_or_config)
+        else:
+            # Modo dos archivos: template + client merge
+            self.template_path = template_or_config
+            self.client_config_path = client_config
+            self.template = self._load_yaml(template_or_config)
+            self.client = self._load_yaml(client_config)
+            self.config = self._merge_configs(self.template, self.client)
     
     def _load_yaml(self, filepath: str) -> dict:
         """

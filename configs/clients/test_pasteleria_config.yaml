@@ -1,6 +1,5 @@
-# CONFIGURACIÓN DE PRUEBA - PASTELERÍA FICTICIA
-
 client:
+  id: "test_pasteleria"
   name: "Pastelería Test"
   industry: "alimentos"
   contact:
@@ -17,6 +16,7 @@ business_parameters:
   monthly_revenue: 250000
 
 simulation:
+  iterations: 1000
   n_simulations: 1000
   seed: 42
 
@@ -24,6 +24,55 @@ current_prices:
   precio_harina: 20
   precio_azucar: 25
   demanda_unidades: 2400
+
+variables:
+  precio_harina:
+    description: "Costo por kilogramo de harina"
+    distribution: "triangular"
+    params:
+      min: 18.0
+      mode: 20.0
+      max: 23.0
+  precio_azucar:
+    description: "Costo por kilogramo de azucar"
+    distribution: "triangular"
+    params:
+      min: 22.5
+      mode: 25.0
+      max: 28.75
+  demanda_unidades:
+    description: "Unidades vendidas por mes"
+    distribution: "normal"
+    params:
+      mean: 2400.0
+      std: 300.0
+
+business_model: |
+  def modelo_alimentos(variables, config):
+      ingresos = variables['demanda_unidades'] * config['precio_venta_unitario']
+      costo_materias_primas = 0
+      for insumo, cantidad_por_unidad in config['receta'].items():
+          precio_insumo = variables.get(f'precio_{insumo}', 0)
+          costo_materias_primas += precio_insumo * cantidad_por_unidad * variables['demanda_unidades']
+      costos_fijos = config['costo_fijo_mensual']
+      return ingresos - costo_materias_primas - costos_fijos
+
+thresholds:
+  high_volatility: 0.35
+  critical_loss_prob: 0.25
+  margin_protection: 0.05
+
+decision_rules:
+  - rule_id: "R001_PERDIDA"
+    condition: "prob_loss > 0.25"
+    severity: "CRÍTICO"
+    category: "financial_risk"
+    recommendation_template: "Probabilidad de pérdida crítica ({prob_loss:.1%}). Revisar estructura de costos."
+  - rule_id: "R002_VOLATILIDAD"
+    condition: "std > 50000"
+    severity: "ALTO"
+    category: "volatility"
+    recommendation_template: "Alta volatilidad detectada. Considerar contratos de precio fijo con proveedores."
 
 report:
   language: "es"
