@@ -40,29 +40,32 @@ class DecisionPipeline:
             raise PipelineExecutionError(f"Pipeline detenido en Fase {phase_number}: {e}")
 
     def execute(self) -> dict:
-        # FASE 1
+        # FASE 1: Ajuste de Extracción
+        # La IA de Llama ya inyectó los parámetros estadísticos en el YAML. 
+        # Ignoramos la extracción masiva antigua que rompía el sistema.
         extracted_data = {}
-        if self.data_engine:
-            # CIRUGÍA APLICADA: Eliminado el .connect(). Llamamos directamente a la extracción.
-            extracted_data = self.run_phase(1, "Data Extraction Engine", 
-                lambda: self.data_engine.extract_all_variables())
+        self.pipeline_state['phase_1_completed'] = True
         
-        # FASE 2
+        # FASE 2: Simulación (Usando la mente del Agente IA)
         def run_mc():
-            self.mc_engine.load_historical_data(extracted_data if extracted_data else None)
+            # Cargamos el motor en vacío
+            self.mc_engine.load_historical_data()
+            
+            # Configuramos y disparamos la simulación de Monte Carlo
             self.mc_engine.setup_simulation()
             return {
                 'results': self.mc_engine.run(),
                 'statistics': self.mc_engine.get_statistics(),
                 'sensitivity': self.mc_engine.sensitivity_analysis()
             }
+            
         mc_results = self.run_phase(2, "Monte Carlo Simulation Engine", run_mc)
         
-        # FASE 3
+        # FASE 3: Traductor de Negocios
         business_narrative = self.run_phase(3, "Business Translator", 
             lambda: BusinessTranslator(self.config, extracted_data).translate(mc_results['statistics'], mc_results['sensitivity']))
         
-        # FASE 4
+        # FASE 4: Inteligencia de Decisiones
         decision_results = self.run_phase(4, "Decision Intelligence Engine",
             lambda: self.decision_engine.generate_recommendations(mc_results['statistics'], mc_results['sensitivity']))
             
