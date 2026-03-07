@@ -544,6 +544,17 @@ def main():
     business_narrative = pipeline_results['business_narrative']
     recommendations = pipeline_results['recommendations']
 
+    # Sanity check de escala antes de renderizar
+    mean_val = stats.get('mean', 0)
+    if abs(mean_val) > 1_000_000_000:
+        st.error(
+            f"⚠️ **Error de escala en el modelo:** El resultado esperado es "
+            f"${mean_val:,.0f}, lo que indica un problema en el `business_model` del YAML. "
+            "Probable causa: las variables representan totales mensuales pero el modelo "
+            "las multiplica por un volumen (ej. `× 1000`). "
+            "Ve al **Admin Panel → YAML Builder** y regenera la configuración del cliente."
+        )
+
     # Evaluar triggers
     try:
         triggers = pipeline.mc_engine.evaluate_triggers(stats)

@@ -495,6 +495,9 @@ CRITERIOS:
 2. Columnas de fecha/timestamp claramente identificables en el schema
 3. Valores numericos con variabilidad significativa
 4. Solo tablas y columnas que EXISTEN en el schema proporcionado
+5. ESCALA: los params (mean, min, mode, max, std_dev) deben ser TOTALES MENSUALES
+   reales del negocio, NO valores por unidad ni multiplicados por volumen
+6. El business_model debe operar directamente con esos totales (sin multiplicar por volumen)
 
 Segun la industria {selected_client.industry}, recomienda una metodologia de KPIs:
 - okr: Tech, startups, crecimiento acelerado
@@ -536,11 +539,11 @@ variables:
 
 business_model: |
   def modelo_{industry_fn}(variables, params):
-      var1 = variables.get('nombre_variable_1', 0)
-      var2 = variables.get('nombre_variable_2', 0)
-      ingresos = var1 * params.get('volumen_mensual', 1000)
-      costos = var2 * params.get('volumen_mensual', 1000)
-      return ingresos - costos
+      # IMPORTANTE: las variables ya representan TOTALES MENSUALES
+      # NO multipliques por volumen si las variables son totales
+      ingresos_totales = variables.get('nombre_variable_1', 0)
+      costos_totales   = variables.get('nombre_variable_2', 0)
+      return ingresos_totales - costos_totales
 
 decision_rules:
   - title: "Riesgo alto de perdida detectado"

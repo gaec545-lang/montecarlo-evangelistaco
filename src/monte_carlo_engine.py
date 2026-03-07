@@ -385,11 +385,20 @@ class UniversalMonteCarloEngine:
         
         df_samples['outcome'] = outcomes
         df_samples['simulation_id'] = range(len(df_samples))
-        
+
+        # Sanity check: detectar resultados imposibles
+        mean_outcome = df_samples['outcome'].mean()
+        if abs(mean_outcome) > 1e9:
+            print(
+                f"⚠️  ALERTA DE ESCALA: El resultado medio es ${mean_outcome:,.0f}. "
+                "Verifica que el business_model no multiplique variables-total por volumen. "
+                "Las variables deben representar totales mensuales directamente."
+            )
+
         self.results = df_samples
-        
+
         print("✅ Simulación completada\n")
-        
+
         return df_samples
     
     def get_statistics(self) -> Dict[str, float]:
