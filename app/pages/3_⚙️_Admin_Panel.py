@@ -478,15 +478,26 @@ with tab2:
 
                         industry_fn = selected_client.industry.replace('-', '_').replace(' ', '_')
 
-                        ai_prompt = f"""Industria: {selected_client.industry}
-Cliente: {selected_client.name}
+                        ai_prompt = f"""Eres un experto en analisis de riesgo financiero y simulacion Monte Carlo.
 
-Esquema de base de datos (metadata):
+CONTEXTO DEL CLIENTE:
+- Industria: {selected_client.industry}
+- Nombre: {selected_client.name}
+- Client ID: {selected_client_id}
+
+ESTRUCTURA DE DATOS DISPONIBLE:
 {json.dumps(schemas, indent=2, ensure_ascii=False)}
 
-TAREA: Identifica las 2-4 variables de riesgo mas importantes para la industria {selected_client.industry}.
-Para cada variable usa columnas reales del esquema (fecha/timestamp y valor numerico).
-Genera tambien reglas de decision especificas para la industria.
+TAREA: Identifica las 2-4 variables de riesgo MAS CRITICAS para esta industria.
+
+CRITERIOS:
+1. Variables con ALTO impacto financiero (revenue o cost drivers)
+2. Columnas de fecha/timestamp claramente identificables en el schema
+3. Valores numericos con variabilidad significativa
+4. Solo tablas y columnas que EXISTEN en el schema proporcionado
+
+ESTRUCTURA OBLIGATORIA - incluir TODAS estas secciones:
+client, variables, business_model, decision_rules, simulation, metadata
 
 RETORNA SOLO EL YAML (sin markdown, sin explicaciones):
 
@@ -495,63 +506,126 @@ client:
   name: "{selected_client.name}"
   industry: "{selected_client.industry}"
 
-simulation:
-  iterations: 10000
-
 variables:
-  nombre_variable:
+  nombre_variable_1:
+    description: "Descripcion del impacto financiero"
+    sql_table: "tabla_exacta_del_schema"
+    date_column: "columna_fecha_exacta"
+    value_column: "columna_valor_exacta"
+    distribution: "normal"
+    params:
+      mean: 100.0
+      std_dev: 15.0
+  nombre_variable_2:
     description: "Descripcion"
     sql_table: "tabla_exacta"
     date_column: "columna_fecha"
     value_column: "columna_valor"
-    distribution: "normal"
+    distribution: "triangular"
     params:
-      mean: 0.0
-      std: 0.0
+      min: 80.0
+      mode: 100.0
+      max: 130.0
 
 business_model: |
   def modelo_{industry_fn}(variables, params):
-      resultado = 0.0
-      return resultado
+      var1 = variables.get('nombre_variable_1', 0)
+      var2 = variables.get('nombre_variable_2', 0)
+      ingresos = var1 * params.get('volumen_mensual', 1000)
+      costos = var2 * params.get('volumen_mensual', 1000)
+      return ingresos - costos
 
 decision_rules:
-  - title: "Alta probabilidad de perdida"
-    condition: "prob_loss > 0.25"
+  - title: "Riesgo alto de perdida detectado"
+    condition: "prob_loss > 0.20"
     priority: "Alta"
     actions:
       - "Revisar estructura de costos inmediatamente"
-      - "Analizar drivers principales de riesgo"
-      - "Implementar controles de contingencia"
-  - title: "Volatilidad excesiva detectada"
+      - "Analizar principales drivers de riesgo"
+      - "Implementar controles de contingencia preventivos"
+      - "Considerar estrategias de cobertura o hedging"
+  - title: "Volatilidad operativa excesiva"
     condition: "cv > 0.30"
     priority: "Media"
     actions:
-      - "Evaluar estrategias de cobertura"
-      - "Diversificar exposicion a riesgo"
+      - "Evaluar estrategias de diversificacion de riesgo"
+      - "Analizar estabilizacion de variables clave"
+      - "Considerar contratos de precio fijo con proveedores"
+  - title: "Value at Risk significativo"
+    condition: "abs(var_95) > abs(expected_value) * 0.25"
+    priority: "Alta"
+    actions:
+      - "Establecer reservas de contingencia adecuadas"
+      - "Revisar politicas de gestion de riesgo financiero"
 
-thresholds:
-  critical_loss_prob: 0.20
-  high_volatility: 0.35
-  margin_protection: 0.05
+simulation:
+  iterations: 10000
+  confidence_level: 0.95
 
 metadata:
+  generated_by: "AI Agent v1.0"
   generated_at: "{date.today()}"
+  reasoning: "Explicacion breve de por que se seleccionaron estas variables"
 """
 
                         try:
                             agent = AIFinancialAgent()
                             generated_yaml = agent.generate_config_from_prompt(ai_prompt, selected_client.industry)
 
-                            st.success("✅ Configuracion generada.")
+                            st.success("✅ Configuracion generada por IA")
+
+                            # ── VALIDACIÓN ROBUSTA DE ESTRUCTURA ─────────────
+                            st.info("🔍 Validando estructura del YAML...")
+                            try:
+                                parsed_yaml = yaml.safe_load(generated_yaml)
+                                validations = []
+
+                                for section in ['client', 'variables', 'business_model', 'decision_rules', 'simulation']:
+                                    if section in parsed_yaml:
+                                        validations.append(f"✅ Seccion '{section}' presente")
+                                    else:
+                                        validations.append(f"❌ FALTA seccion '{section}'")
+
+                                if 'variables' in parsed_yaml:
+                                    for var_name, var_cfg in parsed_yaml['variables'].items():
+                                        if var_cfg and var_cfg.get('params'):
+                                            validations.append(f"✅ Variable '{var_name}' tiene parametros")
+                                        else:
+                                            validations.append(f"❌ Variable '{var_name}' SIN parametros")
+
+                                if 'decision_rules' in parsed_yaml:
+                                    rule_count = len(parsed_yaml['decision_rules'] or [])
+                                    if rule_count >= 2:
+                                        validations.append(f"✅ {rule_count} decision_rules definidas")
+                                    else:
+                                        validations.append(f"⚠️ Solo {rule_count} decision_rule(s), se recomiendan 2+")
+
+                                if parsed_yaml.get('business_model'):
+                                    if 'def modelo_' in str(parsed_yaml['business_model']):
+                                        validations.append("✅ Business model tiene funcion Python")
+                                    else:
+                                        validations.append("⚠️ Business model sin 'def modelo_'")
+
+                                with st.expander("🔍 Resultados de Validacion"):
+                                    for v in validations:
+                                        if '❌' in v:
+                                            st.error(v)
+                                        elif '⚠️' in v:
+                                            st.warning(v)
+                                        else:
+                                            st.success(v)
+
+                                critical_errors = [v for v in validations if '❌' in v]
+                                if critical_errors:
+                                    st.error("❌ YAML con errores criticos. Intenta regenerar.")
+                                else:
+                                    st.success("✅ YAML valido y completo")
+
+                            except yaml.YAMLError as e:
+                                st.error(f"❌ YAML mal formado: {e}")
+
                             st.subheader("📄 YAML Generado")
                             st.code(generated_yaml, language='yaml')
-
-                            # Validar sintaxis
-                            try:
-                                yaml.safe_load(generated_yaml)
-                                st.success("✅ YAML valido.")
-                            except Exception as e:
-                                st.error(f"YAML con errores de sintaxis: {e}")
 
                             # Persistir en session_state para sobrevivir reruns
                             st.session_state['yaml_to_save'] = generated_yaml
