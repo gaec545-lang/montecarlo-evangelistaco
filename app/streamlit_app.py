@@ -30,9 +30,18 @@ st.set_page_config(
 # PIPELINE
 # ═══════════════════════════════════════════════════════════════
 
+def _config_hash(config_file: str) -> str:
+    """MD5 del archivo YAML para invalidar cache cuando cambia el config."""
+    import hashlib
+    try:
+        return hashlib.md5(Path(config_file).read_bytes()).hexdigest()[:8]
+    except Exception:
+        return "0"
+
+
 @st.cache_resource
-def load_pipeline(client_id: str, config_file: str):
-    """Carga config y pipeline para un cliente. Usa modo single-file."""
+def load_pipeline(client_id: str, config_file: str, _config_hash: str = ""):
+    """Carga config y pipeline. Cache se invalida cuando el YAML cambia (_config_hash)."""
     config = ConfigurationManager(config_file)
 
     supabase_creds = None
@@ -48,8 +57,9 @@ def load_pipeline(client_id: str, config_file: str):
     return pipeline, config
 
 
-@st.cache_data
-def run_pipeline(_pipeline):
+@st.cache_data(ttl=3600)
+def run_pipeline(_pipeline, _cache_bust: str = ""):
+    """Ejecuta el pipeline. TTL de 1 hora; _cache_bust fuerza re-ejecucion."""
     return _pipeline.execute()
 
 
@@ -268,7 +278,9 @@ def login_page():
             manager = UserManager()
             user = manager.authenticate(username, password, ip="streamlit_client")
 
+            from src.audit_logger import log_auth
             if user:
+                log_auth(username, success=True, role=user.role, ip="streamlit_client")
                 st.session_state.authenticated = True
                 st.session_state.role = user.role
                 st.session_state.username = user.nombre_completo
@@ -278,6 +290,7 @@ def login_page():
                 st.session_state.last_activity = datetime.now().isoformat()
                 st.rerun()
             else:
+                log_auth(username, success=False, ip="streamlit_client")
                 st.error("❌ Credenciales invalidas o cuenta bloqueada temporalmente.")
 
 
@@ -820,13 +833,24 @@ def main():
         st.info(f"**Usuario:** {st.session_state.username}\n**Rol:** {role_emoji} {role}")
 
         if st.button("🚪 Cerrar Sesion", use_container_width=True):
+            from src.audit_logger import log_event, EventType
+            log_event(EventType.AUTH_LOGOUT,
+                      username=st.session_state.get('raw_username', 'unknown'),
+                      role=role)
             st.session_state.clear()
             st.rerun()
 
         if role in ["Consultor", "Admin"]:
             st.markdown("---")
             st.page_link("pages/3_⚙️_Admin_Panel.py", label="Panel de Administracion", icon="⚙️")
-            st.markdown("---")
+
+        st.markdown("---")
+        if st.button("🔄 Actualizar Analisis", use_container_width=True,
+                     help="Fuerza re-ejecucion del pipeline aunque el cache sea reciente"):
+            import uuid
+            st.session_state['pipeline_cache_bust'] = str(uuid.uuid4())[:8]
+            st.rerun()
+        st.markdown("---")
 
         st.markdown("---")
         st.caption("Pipeline: 5 Fases")
@@ -899,7 +923,38 @@ def main():
         st.stop()
 
     # ═══ CARGAR Y EJECUTAR PIPELINE ═══
-    pipeline, config = load_pipeline(selected_client_id, selected_client.config_file)
+
+    # Validacion de configuracion antes de ejecutar
+    from src.config_validator import validate_config_file
+    from src.audit_logger import log_pipeline, log_pdf
+    import time as _time
+
+    cfg_hash = _config_hash(selected_client.config_file)
+    validation = validate_config_file(selected_client.config_file)
+
+    if not validation.is_valid:
+        st.error(f"**Configuracion invalida** — {validation.summary}")
+        for err in validation.errors:
+            st.error(f"  ❌ {err}")
+        for warn in validation.warnings:
+            st.warning(f"  ⚠️ {warn}")
+        st.info("Ve al **Admin Panel → YAML Builder** para regenerar la configuracion.")
+        st.stop()
+
+    if validation.warnings:
+        with st.expander(f"⚠️ {len(validation.warnings)} advertencia(s) en la configuracion"):
+            for w in validation.warnings:
+                st.warning(w)
+
+    # Cache bust manual
+    if st.session_state.get('force_refresh'):
+        st.session_state.pop('force_refresh', None)
+        st.cache_data.clear()
+
+    pipeline, config = load_pipeline(selected_client_id, selected_client.config_file, cfg_hash)
+
+    _t0 = _time.time()
+    cache_bust = st.session_state.get('pipeline_cache_bust', '')
 
     with st.status("⚙️ Ejecutando Decision Pipeline...", expanded=True) as status_box:
         st.write("**Fase 1** — Ajuste de datos y parámetros estadísticos")
@@ -907,8 +962,22 @@ def main():
         st.write("**Fase 3** — Traducción ejecutiva de resultados")
         st.write("**Fase 4** — Motor de Inteligencia de Decisiones")
         st.write("**Fase 5** — Strategic Advisor (Llama 3.3-70B)")
-        pipeline_results = run_pipeline(pipeline)
-        status_box.update(label="✅ Pipeline completado", state="complete", expanded=False)
+        try:
+            pipeline_results = run_pipeline(pipeline, cache_bust)
+            _duration_ms = int((_time.time() - _t0) * 1000)
+            status_box.update(label="✅ Pipeline completado", state="complete", expanded=False)
+        except Exception as _pipeline_err:
+            _duration_ms = int((_time.time() - _t0) * 1000)
+            log_pipeline(
+                username=st.session_state.get('raw_username', 'unknown'),
+                client_id=selected_client_id,
+                role=role,
+                duration_ms=_duration_ms,
+                error=str(_pipeline_err),
+            )
+            status_box.update(label="❌ Pipeline fallido", state="error", expanded=True)
+            st.error(f"Error ejecutando el pipeline: {_pipeline_err}")
+            st.stop()
 
     results = pipeline_results['simulation_results']
     stats = pipeline_results['statistics']
@@ -916,6 +985,24 @@ def main():
     business_narrative = pipeline_results['business_narrative']
     recommendations = pipeline_results['recommendations']
     strategic_analysis = pipeline_results.get('strategic_analysis', {})
+
+    # Audit log pipeline exitoso
+    try:
+        _health_score = None
+        from src.executive_dashboard_engine import ExecutiveDashboardEngine as _EDE2
+        _health_score = _EDE2({'statistics': stats}).generate()['health_score']
+    except Exception:
+        pass
+    exec_summary = pipeline_results.get('execution_summary', {})
+    phases_done  = sum(1 for k, v in exec_summary.items() if k.endswith('_completed') and v)
+    log_pipeline(
+        username=st.session_state.get('raw_username', 'unknown'),
+        client_id=selected_client_id,
+        role=role,
+        duration_ms=_duration_ms,
+        health_score=_health_score,
+        phases_completed=phases_done,
+    )
 
     # Sanity check de escala antes de renderizar
     mean_val = stats.get('mean', 0)
@@ -1007,6 +1094,8 @@ def main():
                     industry=industry,
                 )
                 pdf_bytes = gen.generate()
+                log_pdf(st.session_state.get('raw_username', 'unknown'),
+                        selected_client_id, role)
                 st.session_state['pdf_bytes'] = pdf_bytes
                 st.session_state['pdf_filename'] = (
                     f"sentinel_{selected_client_id}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"

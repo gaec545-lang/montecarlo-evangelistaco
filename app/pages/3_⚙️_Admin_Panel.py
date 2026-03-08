@@ -51,7 +51,7 @@ if st.session_state.role not in ["Admin", "Consultor"]:
 st.markdown("<h1>⚙️ Panel de Administracion</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-tab1, tab2, tab3 = st.tabs(["🏢 Clientes", "🤖 YAML Builder", "👥 Usuarios"])
+tab1, tab2, tab3, tab4 = st.tabs(["🏢 Clientes", "🤖 YAML Builder", "👥 Usuarios", "📋 Audit Log"])
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1: GESTIÓN DE CLIENTES
@@ -816,3 +816,117 @@ with tab3:
                 um_dir.delete_user(user_to_delete)
                 st.success(f"Usuario '{user_to_delete}' eliminado.")
                 st.rerun()
+
+with tab4:
+    st.subheader("📋 Audit Log — Actividad del Sistema")
+
+    from src.audit_logger import read_logs, get_summary_stats, EventType
+
+    # Filtros
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    with col_f1:
+        hours_filter = st.selectbox("Periodo", [6, 24, 48, 168], index=1,
+                                    format_func=lambda x: f"Ultimas {x}h" if x < 48 else
+                                    ("Ultimas 48h" if x == 48 else "Ultima semana"))
+    with col_f2:
+        event_options = {
+            "Todos": None,
+            "Autenticacion": EventType.AUTH_SUCCESS,
+            "Login fallido": EventType.AUTH_FAILURE,
+            "Pipeline": EventType.PIPELINE_RUN,
+            "Error pipeline": EventType.PIPELINE_ERROR,
+            "PDF descargado": EventType.PDF_DOWNLOAD,
+            "YAML generado": EventType.YAML_GENERATE,
+        }
+        event_label = st.selectbox("Tipo de evento", list(event_options.keys()))
+        event_filter = event_options[event_label]
+    with col_f3:
+        try:
+            all_users_audit = list({e.get('username') for e in read_logs(limit=1000)
+                                     if e.get('username')})
+        except Exception:
+            all_users_audit = []
+        user_filter_audit = st.selectbox("Usuario", ["Todos"] + sorted(all_users_audit))
+        user_filter_audit = None if user_filter_audit == "Todos" else user_filter_audit
+    with col_f4:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 Refrescar", use_container_width=True):
+            st.rerun()
+
+    # Estadisticas resumidas
+    summary = get_summary_stats(since_hours=hours_filter)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total eventos", summary['total_events'])
+    m2.metric("Logins fallidos", summary['auth_failures'],
+              delta=f"-{summary['auth_failures']}" if summary['auth_failures'] else None,
+              delta_color="inverse")
+    m3.metric("Errores de pipeline", summary['pipeline_errors'],
+              delta_color="inverse")
+    m4.metric("Duracion promedio", f"{summary['avg_pipeline_ms']:,} ms"
+              if summary['avg_pipeline_ms'] else "N/A")
+
+    st.markdown("---")
+
+    # Tabla de logs
+    logs = read_logs(
+        limit=300,
+        event_type=event_filter,
+        username=user_filter_audit,
+        since_hours=hours_filter,
+    )
+
+    if not logs:
+        st.info("No hay eventos en el periodo seleccionado.")
+    else:
+        # Preparar DataFrame
+        rows = []
+        for e in reversed(logs):  # mas reciente primero
+            icon_map = {
+                EventType.AUTH_SUCCESS:   "🟢",
+                EventType.AUTH_FAILURE:   "🔴",
+                EventType.AUTH_LOGOUT:    "🔵",
+                EventType.PIPELINE_RUN:   "⚙️",
+                EventType.PIPELINE_ERROR: "❌",
+                EventType.PDF_DOWNLOAD:   "📄",
+                EventType.YAML_GENERATE:  "🤖",
+                EventType.ADMIN_ACTION:   "👤",
+            }
+            ev = e.get('event', '')
+            details = e.get('details') or {}
+            detail_str = ""
+            if ev == EventType.PIPELINE_RUN:
+                hs = details.get('health_score')
+                ph = details.get('phases_completed', 0)
+                detail_str = f"Score: {hs} | Fases: {ph}/5" if hs else f"Fases: {ph}/5"
+            elif ev == EventType.PIPELINE_ERROR:
+                detail_str = (details.get('error') or '')[:60]
+            elif details:
+                detail_str = str(details)[:60]
+
+            ts_raw = e.get('ts', '')
+            try:
+                from datetime import datetime, timezone
+                ts_dt = datetime.fromisoformat(ts_raw)
+                ts_str = ts_dt.strftime('%d/%m %H:%M:%S')
+            except Exception:
+                ts_str = ts_raw[:19]
+
+            rows.append({
+                '': icon_map.get(ev, '•'),
+                'Timestamp': ts_str,
+                'Evento': ev,
+                'Usuario': e.get('username', ''),
+                'Cliente': e.get('client_id', ''),
+                'Rol': e.get('role', ''),
+                'Duracion': f"{e['duration_ms']} ms" if e.get('duration_ms') else '',
+                'Detalle': detail_str,
+            })
+
+        df_audit = pd.DataFrame(rows)
+        st.dataframe(df_audit, use_container_width=True, hide_index=True,
+                     column_config={
+                         '': st.column_config.TextColumn(width="small"),
+                         'Timestamp': st.column_config.TextColumn(width="small"),
+                         'Evento': st.column_config.TextColumn(width="medium"),
+                     })
+        st.caption(f"Mostrando {len(logs)} eventos recientes.")
