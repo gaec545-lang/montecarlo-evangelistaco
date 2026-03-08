@@ -741,6 +741,57 @@ def main():
         vista_consultor(stats, triggers, sensitivity, results, config,
                         business_narrative, recommendations, strategic_analysis)
 
+    # ── BOTON DESCARGA PDF (visible para todos los roles) ─────────────────
+    st.markdown("---")
+    col_pdf, col_info = st.columns([1, 3])
+    with col_pdf:
+        if st.button("📄 Generar Reporte PDF", use_container_width=True):
+            try:
+                from src.pdf_generator import PDFGenerator
+                from src.executive_dashboard_engine import ExecutiveDashboardEngine
+
+                mc_input = {'statistics': stats}
+                engine = ExecutiveDashboardEngine(mc_input, strategic_analysis, config)
+                dashboard_data = engine.generate()
+
+                client_name = config.get('client.name', selected_client.name)
+                industry = config.get('client.industry', 'General')
+
+                gen = PDFGenerator(
+                    client_name=client_name,
+                    stats=stats,
+                    sensitivity=sensitivity,
+                    dashboard=dashboard_data,
+                    strategic_analysis=strategic_analysis,
+                    recommendations=pipeline_results.get('recommendations', []),
+                    business_narrative=business_narrative,
+                    industry=industry,
+                )
+                pdf_bytes = gen.generate()
+                st.session_state['pdf_bytes'] = pdf_bytes
+                st.session_state['pdf_filename'] = (
+                    f"sentinel_{selected_client_id}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error generando PDF: {e}")
+
+    if st.session_state.get('pdf_bytes'):
+        with col_pdf:
+            st.download_button(
+                label="⬇️ Descargar PDF",
+                data=st.session_state['pdf_bytes'],
+                file_name=st.session_state.get('pdf_filename', 'report.pdf'),
+                mime='application/pdf',
+                use_container_width=True,
+            )
+    with col_info:
+        st.info(
+            "📄 El reporte PDF incluye: Business Health Score, KPIs ejecutivos, "
+            "resultados de Monte Carlo, recomendaciones estrategicas, analisis de riesgos "
+            "y plan de accion. Ideal para presentar a directivos."
+        )
+
 
 if __name__ == "__main__":
     main()
