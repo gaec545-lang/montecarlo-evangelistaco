@@ -673,6 +673,182 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
     except Exception as e:
         st.warning(f"⚠️ No se pudieron generar KPIs: {e}")
 
+    # ── SCENARIO PLANNER ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("🔮 Scenario Planner — Analisis What-If")
+    st.caption("Ajusta los parametros de las variables y simula el impacto sin modificar el YAML.")
+
+    variables_cfg = config.get('variables', {}) or {}
+    if not variables_cfg:
+        st.info("Sin variables configuradas para el Scenario Planner.")
+    else:
+        with st.expander("⚙️ Configurar escenario", expanded=False):
+            adjustments = {}
+            var_names = list(variables_cfg.keys())
+            cols_per_row = 3
+            for row_start in range(0, len(var_names), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for i, var in enumerate(var_names[row_start:row_start + cols_per_row]):
+                    with cols[i]:
+                        st.markdown(f"**{var}**")
+                        delta_mean = st.slider(
+                            f"Media (%)", -50, 50, 0, 5, key=f"sp_mean_{var}",
+                            help=f"Ajuste porcentual sobre la media de '{var}'"
+                        )
+                        delta_std = st.slider(
+                            f"Volatilidad (%)", -50, 50, 0, 5, key=f"sp_std_{var}",
+                            help=f"Ajuste porcentual sobre la desviacion estandar de '{var}'"
+                        )
+                        if delta_mean != 0 or delta_std != 0:
+                            adjustments[var] = {"delta_mean_pct": delta_mean, "delta_std_pct": delta_std}
+
+            col_run, col_info = st.columns([1, 3])
+            with col_run:
+                run_scenario = st.button("▶️ Simular Escenario", use_container_width=True,
+                                         key="run_scenario_btn")
+            with col_info:
+                active = len(adjustments)
+                if active:
+                    st.info(f"**{active} variable(s) ajustadas.** Haz clic en Simular para comparar con el baseline.")
+                else:
+                    st.caption("Ajusta al menos una variable para habilitar la simulacion.")
+
+            if run_scenario:
+                if not adjustments:
+                    st.warning("Ajusta al menos una variable antes de simular.")
+                else:
+                    try:
+                        from src.scenario_planner import ScenarioPlanner
+                        with st.spinner("Ejecutando 5,000 simulaciones what-if..."):
+                            raw_cfg = {}
+                            for k in ['variables', 'business_model', 'business_parameters']:
+                                val = config.get(k)
+                                if val:
+                                    raw_cfg[k] = val
+                            planner = ScenarioPlanner(raw_cfg)
+                            for var, adj in adjustments.items():
+                                planner.set_adjustment(var, **adj)
+                            scenario_out = planner.run(n_simulations=5000)
+                            comparison = planner.compare(stats, scenario_out['statistics'])
+
+                        st.markdown("#### Comparacion: Baseline vs Escenario")
+                        STATUS_ICONS_S = {True: "🟢", False: "🔴", None: "⚪"}
+                        comp_rows = []
+                        for c in comparison:
+                            icon = STATUS_ICONS_S.get(None if c['neutral'] else c['favorable'])
+                            unit = c['unit']
+                            fmt_b = f"${c['baseline']:,.0f}" if unit == "$" else f"{c['baseline']:.1%}"
+                            fmt_s = f"${c['scenario']:,.0f}" if unit == "$" else f"{c['scenario']:.1%}"
+                            fmt_d = f"{c['delta_pct']:+.1f}%"
+                            comp_rows.append({
+                                '': icon,
+                                'Metrica': c['metric'],
+                                'Baseline': fmt_b,
+                                'Escenario': fmt_s,
+                                'Delta %': fmt_d,
+                            })
+                        st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+
+                        # Mini fan chart comparativo
+                        sc_stats = scenario_out['statistics']
+                        import plotly.graph_objects as _go
+                        fig_comp = _go.Figure()
+                        pcts = ['P10', 'P50', 'P90']
+                        keys_c = ['p10', 'p50', 'p90']
+                        base_vals = [stats.get(k, 0) for k in keys_c]
+                        scen_vals = [sc_stats.get(k, 0) for k in keys_c]
+                        fig_comp.add_trace(_go.Bar(name='Baseline', x=pcts, y=base_vals,
+                                                   marker_color='rgba(26,26,46,0.7)'))
+                        fig_comp.add_trace(_go.Bar(name='Escenario', x=pcts, y=scen_vals,
+                                                   marker_color='rgba(212,175,55,0.85)'))
+                        fig_comp.update_layout(
+                            barmode='group', height=320,
+                            title='Baseline vs Escenario — P10 / P50 / P90',
+                            yaxis_tickformat='$,.0f',
+                            plot_bgcolor='white', paper_bgcolor='white',
+                            legend=dict(orientation='h', y=-0.25),
+                        )
+                        st.plotly_chart(fig_comp, use_container_width=True)
+
+                    except Exception as e:
+                        st.error(f"Error en Scenario Planner: {e}")
+
+    # ── HISTORICAL COMPARISON ─────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📈 Comparacion Historica")
+    try:
+        from src.history_manager import load_snapshots, compute_delta
+        hist_snapshots = load_snapshots(selected_client_id, limit=30)
+
+        if len(hist_snapshots) < 2:
+            st.info("Historial disponible despues de ejecutar el pipeline al menos 2 veces. "
+                    f"Snapshots actuales: {len(hist_snapshots)}/2")
+        else:
+            # Grafico de tendencia
+            import plotly.graph_objects as _go2
+            labels = [s.get('label', s.get('timestamp', '')[:10]) for s in hist_snapshots]
+            p50s  = [s.get('stats', {}).get('p50', 0) for s in hist_snapshots]
+            p10s  = [s.get('stats', {}).get('p10', 0) for s in hist_snapshots]
+            p90s  = [s.get('stats', {}).get('p90', 0) for s in hist_snapshots]
+            probs = [s.get('stats', {}).get('prob_loss', 0) * 100 for s in hist_snapshots]
+            scores = [s.get('health_score') for s in hist_snapshots if s.get('health_score')]
+
+            fig_hist = _go2.Figure()
+            fig_hist.add_trace(_go2.Scatter(
+                x=labels, y=p90s, mode='lines', name='P90 (Optimista)',
+                line=dict(color='#27AE60', dash='dot', width=1.5),
+                fill=None,
+            ))
+            fig_hist.add_trace(_go2.Scatter(
+                x=labels, y=p50s, mode='lines+markers', name='P50 (Base)',
+                line=dict(color='#1A1A2E', width=2.5),
+                marker=dict(size=7, color='#D4AF37', line=dict(color='#1A1A2E', width=1.5)),
+            ))
+            fig_hist.add_trace(_go2.Scatter(
+                x=labels, y=p10s, mode='lines', name='P10 (Pesimista)',
+                line=dict(color='#E74C3C', dash='dot', width=1.5),
+                fill='tonexty' if len(p90s) > 1 else None,
+                fillcolor='rgba(39,174,96,0.07)',
+            ))
+            fig_hist.add_hline(y=0, line_width=1, line_dash='dash', line_color='#999')
+            fig_hist.update_layout(
+                plot_bgcolor='white', paper_bgcolor='white',
+                title='Evolucion del Resultado Esperado a lo Largo del Tiempo',
+                xaxis_title='Ejecucion', yaxis_title='Resultado (MXN)',
+                yaxis_tickformat='$,.0f', height=350,
+                legend=dict(orientation='h', y=-0.25),
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+            # Delta vs anterior
+            current_snap = hist_snapshots[-1]
+            prev_snap    = hist_snapshots[-2]
+            delta = compute_delta(current_snap, prev_snap)
+            st.markdown("**Delta vs ejecucion anterior:**")
+            delta_cols = st.columns(4)
+            delta_metrics = [
+                ("P50", "p50", "$"),
+                ("Prob. Perdida", "prob_loss", "%"),
+                ("Health Score", "health_score", "pts"),
+                ("VaR 95%", "var_95", "$"),
+            ]
+            for i, (label, key, unit) in enumerate(delta_metrics):
+                if key in delta:
+                    d = delta[key]
+                    val_str = (f"${d['current']:,.0f}" if unit == "$"
+                               else f"{d['current']:.1%}" if unit == "%"
+                               else str(d['current']))
+                    delta_val = d['delta']
+                    delta_str = (f"+${delta_val:,.0f}" if unit == "$" and delta_val >= 0
+                                 else f"${delta_val:,.0f}" if unit == "$"
+                                 else f"{delta_val:+.1%}" if unit == "%"
+                                 else f"{delta_val:+.0f} pts")
+                    delta_cols[i].metric(label, val_str, delta_str,
+                                         delta_color="normal" if delta_val >= 0 else "inverse")
+
+    except Exception as _he:
+        st.warning(f"⚠️ Error cargando historial: {_he}")
+
 
 # ═══════════════════════════════════════════════════════════════
 # APLICACION PRINCIPAL
@@ -986,7 +1162,7 @@ def main():
     recommendations = pipeline_results['recommendations']
     strategic_analysis = pipeline_results.get('strategic_analysis', {})
 
-    # Audit log pipeline exitoso
+    # Audit log + history snapshot (solo si pipeline NO estaba en cache)
     try:
         _health_score = None
         from src.executive_dashboard_engine import ExecutiveDashboardEngine as _EDE2
@@ -1003,6 +1179,17 @@ def main():
         health_score=_health_score,
         phases_completed=phases_done,
     )
+    # Guardar snapshot historico
+    try:
+        from src.history_manager import save_snapshot as _save_snap
+        _save_snap(
+            client_id=selected_client_id,
+            stats=stats,
+            health_score=_health_score,
+            sensitivity=sensitivity,
+        )
+    except Exception:
+        pass
 
     # Sanity check de escala antes de renderizar
     mean_val = stats.get('mean', 0)
@@ -1067,9 +1254,9 @@ def main():
         vista_consultor(stats, triggers, sensitivity, results, config,
                         business_narrative, recommendations, strategic_analysis)
 
-    # ── BOTON DESCARGA PDF (visible para todos los roles) ─────────────────
+    # ── EXPORTACIONES (PDF + Power BI) ───────────────────────────────────
     st.markdown("---")
-    col_pdf, col_info = st.columns([1, 3])
+    col_pdf, col_pbi, col_info = st.columns([1, 1, 2])
     with col_pdf:
         if st.button("📄 Generar Reporte PDF", use_container_width=True):
             try:
@@ -1113,11 +1300,50 @@ def main():
                 mime='application/pdf',
                 use_container_width=True,
             )
+    # Power BI Export
+    with col_pbi:
+        if st.button("📊 Exportar a Power BI", use_container_width=True,
+                     help="Genera un Excel multi-hoja compatible con Power BI Desktop"):
+            try:
+                from src.powerbi_exporter import PowerBIExporter
+                from src.executive_dashboard_engine import ExecutiveDashboardEngine as _EDE3
+                _dash = _EDE3({'statistics': stats}, strategic_analysis, config).generate()
+                client_name_pbi = config.get('client.name', selected_client.name)
+                industry_pbi    = config.get('client.industry', 'General')
+                pbi_exp = PowerBIExporter(
+                    client_id=selected_client_id,
+                    client_name=client_name_pbi,
+                    stats=stats,
+                    simulation_results=results,
+                    sensitivity=sensitivity,
+                    recommendations=pipeline_results.get('recommendations', []),
+                    strategic_analysis=strategic_analysis,
+                    dashboard=_dash,
+                    industry=industry_pbi,
+                )
+                excel_bytes = pbi_exp.export_excel()
+                st.session_state['pbi_bytes'] = excel_bytes
+                st.session_state['pbi_filename'] = (
+                    f"sentinel_pbi_{selected_client_id}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error generando Excel: {e}")
+
+        if st.session_state.get('pbi_bytes'):
+            st.download_button(
+                label="⬇️ Descargar Excel",
+                data=st.session_state['pbi_bytes'],
+                file_name=st.session_state.get('pbi_filename', 'sentinel_pbi.xlsx'),
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
+
     with col_info:
         st.info(
-            "📄 El reporte PDF incluye: Business Health Score, KPIs ejecutivos, "
-            "resultados de Monte Carlo, recomendaciones estrategicas, analisis de riesgos "
-            "y plan de accion. Ideal para presentar a directivos."
+            "📄 **PDF** — Reporte ejecutivo con Health Score, KPIs, Monte Carlo, estrategias y plan de accion.  \n"
+            "📊 **Power BI** — Excel multi-hoja (Summary, Monte Carlo Data, Percentiles, "
+            "Sensibilidad, Recomendaciones) listo para conectar a Power BI Desktop."
         )
 
 
