@@ -43,7 +43,8 @@ def load_pipeline(client_id: str, config_file: str):
     except Exception:
         pass  # Sin boveda disponible → opera sin DB
 
-    pipeline = DecisionPipeline(config, supabase_creds)
+    groq_api_key = st.secrets.get("GROQ_API_KEY") if hasattr(st, "secrets") else None
+    pipeline = DecisionPipeline(config, supabase_creds, groq_api_key=groq_api_key)
     return pipeline, config
 
 
@@ -261,7 +262,7 @@ y recomendaciones priorizadas, contacte a su consultor asignado.
 
 def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame,
                     results: pd.DataFrame, config, business_narrative: str,
-                    recommendations: List[Dict]):
+                    recommendations: List[Dict], strategic_analysis: Dict = None):
     client_name = config.get('client.name', 'N/A')
     industry = config.get('client.industry', 'N/A')
     st.markdown(f"""
@@ -316,6 +317,102 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
     st.markdown("---")
     st.subheader("📊 Distribucion de Resultados")
     st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
+
+    # ── STRATEGIC ADVISOR (FASE 5) ────────────────────────────────────────
+    if strategic_analysis and 'error' not in strategic_analysis:
+        st.markdown("---")
+        st.subheader("🧠 Strategic Advisor — Analisis Estrategico (Fase 5)")
+
+        summary = strategic_analysis.get('executive_summary', {})
+        if summary:
+            risk_colors = {
+                'LOW': 'success', 'MODERATE': 'warning',
+                'HIGH': 'error', 'CRITICAL': 'error'
+            }
+            risk_profile = summary.get('risk_profile', 'MODERATE')
+            render_fn = getattr(st, risk_colors.get(risk_profile, 'info'))
+            render_fn(f"**{risk_profile}** — {summary.get('headline', '')}")
+            st.markdown(summary.get('key_message', ''))
+
+        sa_tabs = st.tabs(["🎯 Recomendaciones", "⚠️ Riesgos", "💡 Oportunidades", "📅 Proximos Pasos"])
+
+        with sa_tabs[0]:
+            recs = strategic_analysis.get('strategic_recommendations', [])
+            if recs:
+                for rec in recs:
+                    horizon = rec.get('implementation_horizon', '')
+                    confidence = rec.get('confidence', '')
+                    with st.expander(
+                        f"#{rec.get('priority', '?')} — {rec.get('title', 'Sin titulo')} "
+                        f"| {horizon} | Confianza: {confidence}",
+                        expanded=(rec.get('priority') == 1)
+                    ):
+                        st.markdown(f"**Fundamento:** {rec.get('rationale', '')}")
+                        st.markdown(f"**Impacto esperado:** {rec.get('expected_impact', '')}")
+                        actions = rec.get('action_items', [])
+                        if actions:
+                            st.markdown("**Plan de accion:**")
+                            for a in actions:
+                                st.write(f"  • {a}")
+            else:
+                st.info("Sin recomendaciones estrategicas generadas.")
+
+        with sa_tabs[1]:
+            risk_analysis = strategic_analysis.get('risk_analysis', {})
+            primary_risks = risk_analysis.get('primary_risks', [])
+            if primary_risks:
+                risk_data = []
+                for r in primary_risks:
+                    risk_data.append({
+                        'Riesgo': r.get('risk', ''),
+                        'Probabilidad': r.get('probability', ''),
+                        'Impacto': r.get('impact', ''),
+                        'Mitigacion': r.get('mitigation', ''),
+                    })
+                st.dataframe(pd.DataFrame(risk_data), use_container_width=True, hide_index=True)
+            scenario = risk_analysis.get('scenario_analysis', {})
+            if scenario:
+                st.markdown("**Analisis de Escenarios:**")
+                col1, col2, col3 = st.columns(3)
+                col1.error(f"**Pesimista:**\n{scenario.get('bear_case', '')}")
+                col2.info(f"**Base:**\n{scenario.get('base_case', '')}")
+                col3.success(f"**Optimista:**\n{scenario.get('bull_case', '')}")
+
+        with sa_tabs[2]:
+            opps = strategic_analysis.get('opportunity_analysis', {})
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**Victorias rapidas (30d)**")
+                for qw in opps.get('quick_wins', []):
+                    st.write(f"  ✅ {qw}")
+            with col2:
+                st.markdown("**Apuestas estrategicas**")
+                for sb in opps.get('strategic_bets', []):
+                    st.write(f"  🎲 {sb}")
+            with col3:
+                st.markdown("**Movimientos defensivos**")
+                for dm in opps.get('defensive_moves', []):
+                    st.write(f"  🛡️ {dm}")
+
+        with sa_tabs[3]:
+            nxt = strategic_analysis.get('next_steps', {})
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**Esta semana**")
+                for s in nxt.get('this_week', []):
+                    st.write(f"  • {s}")
+            with col2:
+                st.markdown("**Este mes**")
+                for s in nxt.get('this_month', []):
+                    st.write(f"  • {s}")
+            with col3:
+                st.markdown("**Este trimestre**")
+                for s in nxt.get('this_quarter', []):
+                    st.write(f"  • {s}")
+
+    elif strategic_analysis and 'error' in strategic_analysis:
+        st.markdown("---")
+        st.warning(f"⚠️ Strategic Advisor no disponible: {strategic_analysis['error']}")
 
     # ── KPIs POR METODOLOGÍA ──────────────────────────────────────────────
     st.markdown("---")
@@ -462,7 +559,7 @@ def main():
             st.markdown("---")
 
         st.markdown("---")
-        st.caption("• Pipeline: 4 Fases")
+        st.caption("• Pipeline: 5 Fases")
         st.caption("• Motor: Decision Intelligence")
         st.markdown("---")
         st.caption("© 2026 Evangelista & Co.")
@@ -535,7 +632,7 @@ def main():
     with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client.name}..."):
         pipeline, config = load_pipeline(selected_client_id, selected_client.config_file)
 
-    with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (4 Fases)..."):
+    with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (5 Fases)..."):
         pipeline_results = run_pipeline(pipeline)
 
     results = pipeline_results['simulation_results']
@@ -543,6 +640,7 @@ def main():
     sensitivity = pipeline_results['sensitivity']
     business_narrative = pipeline_results['business_narrative']
     recommendations = pipeline_results['recommendations']
+    strategic_analysis = pipeline_results.get('strategic_analysis', {})
 
     # Sanity check de escala antes de renderizar
     mean_val = stats.get('mean', 0)
@@ -573,7 +671,7 @@ def main():
                         consultant_name=consultant_name, client_id=selected_client_id)
     else:
         vista_consultor(stats, triggers, sensitivity, results, config,
-                        business_narrative, recommendations)
+                        business_narrative, recommendations, strategic_analysis)
 
 
 if __name__ == "__main__":
