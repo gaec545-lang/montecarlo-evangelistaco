@@ -137,48 +137,107 @@ class ConfigValidator:
                 r.add_error(f"Variable '{name}' (fixed): falta 'value'.")
 
     def _check_business_model(self, config: Dict, r: ValidationResult):
-        bm = config.get('business_model', {})
+        bm = config.get('business_model')
         if not bm:
-            r.add_error("'business_model' esta vacio.")
+            r.add_error("'business_model' esta vacio o no existe.")
             return
 
-        fn = bm.get('function') or bm.get('formula')
-        if not fn:
-            r.add_error("business_model: falta 'function' (la expresion Python del modelo).")
-            return
-
-        # Intentar parsear como Python
-        try:
-            ast.parse(fn, mode='eval')
-        except SyntaxError as e:
-            r.add_error(f"business_model.function tiene error de sintaxis Python: {e}")
-            return
-
-        # Advertir si usa patrones de escala conocidos
-        scale_patterns = [r'\*\s*volumen', r'\*\s*\d{3,}', r'1000\s*\*', r'\*\s*1000']
-        for pattern in scale_patterns:
-            if re.search(pattern, fn, re.IGNORECASE):
-                r.add_warning(
-                    f"business_model.function contiene multiplicacion de escala ({pattern}). "
-                    "Verifica que las variables ya esten en la escala correcta."
+        # ── Formato STRING (YAML block scalar): codigo Python con def modelo_*() ──
+        if isinstance(bm, str):
+            if 'def modelo_' not in bm:
+                r.add_error(
+                    "'business_model' debe contener una funcion que empiece con 'def modelo_'."
                 )
-                break
+                return
 
-        # Verificar que las variables referenciadas en la funcion existen
-        variables = set(config.get('variables', {}).keys())
-        # Extraer nombres simples usados en la funcion (heuristica)
-        names_in_fn = set(re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', fn))
-        # Excluir keywords Python y builtins
-        python_builtins = {'max', 'min', 'abs', 'sum', 'round', 'int', 'float',
-                           'if', 'else', 'and', 'or', 'not', 'True', 'False', 'None',
-                           'len', 'range', 'print'}
-        refs = names_in_fn - python_builtins
-        missing = refs - variables
-        if missing and variables:  # solo advertir si hay variables definidas
-            r.add_warning(
-                f"business_model.function referencia nombres no definidos en 'variables': "
-                f"{missing}. Puede ser parametro de business_parameters o error tipografico."
+            try:
+                compile(bm, '<business_model>', 'exec')
+            except SyntaxError as e:
+                r.add_error(f"'business_model' tiene error de sintaxis Python: {e}")
+                return
+
+            # Ejecutar para verificar que define una funcion modelo_*
+            namespace: Dict = {}
+            try:
+                exec(bm, namespace)  # noqa: S102
+            except Exception as e:
+                r.add_error(f"Error al ejecutar 'business_model': {e}")
+                return
+
+            model_func = next(
+                (obj for name, obj in namespace.items()
+                 if name.startswith('modelo_') and callable(obj)),
+                None,
             )
+            if not model_func:
+                r.add_error("'business_model' no define ninguna funcion modelo_*.")
+                return
+
+            import inspect
+            sig    = inspect.signature(model_func)
+            params = list(sig.parameters.keys())
+            if len(params) != 2 or params[0] != 'variables' or params[1] != 'params':
+                r.add_error(
+                    f"Funcion {model_func.__name__} debe tener exactamente 2 parametros "
+                    f"(variables, params), tiene ({', '.join(params)})."
+                )
+                return
+
+            # Test basico de ejecucion
+            try:
+                test_result = model_func({'var1': 100}, {'param1': 1})
+                if not isinstance(test_result, (int, float)):
+                    r.add_error(
+                        f"Funcion {model_func.__name__} debe retornar un numero, "
+                        f"retorna {type(test_result).__name__}."
+                    )
+            except Exception as e:
+                r.add_warning(
+                    f"Test de ejecucion de {model_func.__name__} fallo: {e}. "
+                    "Verifica que la funcion sea robusta con variables/params vacios."
+                )
+            return
+
+        # ── Formato DICT (legacy): {'function': 'expr'} o {'formula': 'expr'} ──
+        if isinstance(bm, dict):
+            fn = bm.get('function') or bm.get('formula')
+            if not fn:
+                r.add_error("business_model: falta 'function' (la expresion Python del modelo).")
+                return
+
+            try:
+                ast.parse(fn, mode='eval')
+            except SyntaxError as e:
+                r.add_error(f"business_model.function tiene error de sintaxis Python: {e}")
+                return
+
+            scale_patterns = [r'\*\s*volumen', r'\*\s*\d{3,}', r'1000\s*\*', r'\*\s*1000']
+            for pattern in scale_patterns:
+                if re.search(pattern, fn, re.IGNORECASE):
+                    r.add_warning(
+                        f"business_model.function contiene multiplicacion de escala. "
+                        "Verifica que las variables ya esten en la escala correcta."
+                    )
+                    break
+
+            variables = set(config.get('variables', {}).keys())
+            names_in_fn = set(re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', fn))
+            python_builtins = {'max', 'min', 'abs', 'sum', 'round', 'int', 'float',
+                               'if', 'else', 'and', 'or', 'not', 'True', 'False', 'None',
+                               'len', 'range', 'print'}
+            refs    = names_in_fn - python_builtins
+            missing = refs - variables
+            if missing and variables:
+                r.add_warning(
+                    f"business_model.function referencia nombres no definidos en 'variables': "
+                    f"{missing}. Puede ser parametro de business_parameters o error tipografico."
+                )
+            return
+
+        r.add_error(
+            f"'business_model' tiene tipo inesperado: {type(bm).__name__}. "
+            "Debe ser un string con codigo Python o un dict con clave 'function'."
+        )
 
     def _check_decision_rules(self, config: Dict, r: ValidationResult):
         rules = config.get('decision_rules', [])
