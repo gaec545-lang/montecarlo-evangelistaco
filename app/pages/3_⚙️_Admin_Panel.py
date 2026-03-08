@@ -506,6 +506,26 @@ Segun la industria {selected_client.industry}, recomienda una metodologia de KPI
 - north_star: Product-driven businesses
 - operational: Operaciones dia a dia sin framework formal
 
+REGLAS CRITICAS PARA PARAMETROS DE DISTRIBUCIONES:
+
+DISTRIBUCION NORMAL — requiere EXACTAMENTE estos 2 parametros (ambos obligatorios):
+  params:
+    mean: 50000.0     # Promedio mensual real calculado del schema (NUNCA omitir)
+    std_dev: 7500.0   # Desviacion estandar (NUNCA 0, NUNCA omitir; usar 10-20% del mean)
+
+DISTRIBUCION TRIANGULAR — requiere EXACTAMENTE estos 3 parametros (todos obligatorios):
+  params:
+    min: 35000.0      # Valor mensual minimo observado (NUNCA omitir)
+    mode: 50000.0     # Valor mensual mas frecuente (NUNCA omitir, min <= mode <= max)
+    max: 70000.0      # Valor mensual maximo observado (NUNCA omitir)
+
+CALCULO DE PARAMETROS DESDE EL SCHEMA:
+- Usa los sample_data del schema para estimar valores reales
+- Para NORMAL: mean = promedio de los valores; std_dev = 15% del mean
+- Para TRIANGULAR: min = valor mas bajo; mode = mediana; max = valor mas alto
+- Si el schema no tiene datos: estima valores coherentes con la industria {selected_client.industry}
+- NUNCA dejes un param en None, null o vacio
+
 ESTRUCTURA OBLIGATORIA - incluir TODAS estas secciones:
 client, variables, business_model, decision_rules, simulation, kpi_methodology, metadata
 
@@ -524,8 +544,8 @@ variables:
     value_column: "columna_valor_exacta"
     distribution: "normal"
     params:
-      mean: 100.0
-      std_dev: 15.0
+      mean: 50000.0    # OBLIGATORIO: promedio mensual real
+      std_dev: 7500.0  # OBLIGATORIO: nunca 0, tipicamente 10-20% del mean
   nombre_variable_2:
     description: "Descripcion"
     sql_table: "tabla_exacta"
@@ -533,9 +553,9 @@ variables:
     value_column: "columna_valor"
     distribution: "triangular"
     params:
-      min: 80.0
-      mode: 100.0
-      max: 130.0
+      min: 35000.0     # OBLIGATORIO: minimo mensual observado
+      mode: 50000.0    # OBLIGATORIO: valor mas frecuente (min <= mode <= max)
+      max: 70000.0     # OBLIGATORIO: maximo mensual observado
 
 business_model: |
   def modelo_{industry_fn}(variables, params):

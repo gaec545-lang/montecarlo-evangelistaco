@@ -325,6 +325,65 @@ class UniversalMonteCarloEngine:
         else:
             raise ValueError(f"No hay fallback para distribucion: {dist_type}")
     
+    @staticmethod
+    def _sanitize_params(name: str, dist: str, params: dict) -> dict:
+        """
+        Garantiza que los params tengan las claves correctas antes de la simulacion.
+
+        Normaliza:
+        - normal: acepta 'std_dev' ademas de 'std'. Genera defaults si faltan.
+        - triangular: genera min/mode/max si faltan; reordena si estan fuera de rango.
+        - uniform: genera min/max si faltan.
+        """
+        p = dict(params) if params else {}
+
+        if dist == 'normal':
+            # La IA puede generar 'std_dev' en lugar de 'std'
+            if 'std' not in p:
+                p['std'] = p.pop('std_dev', None)
+
+            if not p.get('mean') and p.get('mean') != 0:
+                print(f"⚠️  Variable '{name}': falta 'mean', usando default 1000.0")
+                p['mean'] = 1000.0
+
+            if not p.get('std') or p['std'] == 0:
+                default_std = abs(p['mean']) * 0.15
+                print(f"⚠️  Variable '{name}': falta 'std'/'std_dev' o es 0, usando {default_std:.2f} (15% de mean)")
+                p['std'] = default_std
+
+        elif dist == 'triangular':
+            # Estimar referencia para defaults
+            ref = p.get('mode', p.get('mean', p.get('min', p.get('max', 1000.0))))
+            if ref is None or ref == 0:
+                ref = 1000.0
+
+            if p.get('min') is None:
+                p['min'] = ref * 0.70
+                print(f"⚠️  Variable '{name}': falta 'min', usando {p['min']:.2f}")
+            if p.get('mode') is None:
+                p['mode'] = ref
+                print(f"⚠️  Variable '{name}': falta 'mode', usando {p['mode']:.2f}")
+            if p.get('max') is None:
+                p['max'] = ref * 1.30
+                print(f"⚠️  Variable '{name}': falta 'max', usando {p['max']:.2f}")
+
+            # Garantizar min <= mode <= max
+            if not (p['min'] <= p['mode'] <= p['max']):
+                vals = sorted([p['min'], p['mode'], p['max']])
+                print(f"⚠️  Variable '{name}': triangular invalido (min={p['min']}, mode={p['mode']}, max={p['max']}), reordenando.")
+                p['min'], p['mode'], p['max'] = vals[0], vals[1], vals[2]
+
+        elif dist == 'uniform':
+            ref = p.get('mean', 1000.0) or 1000.0
+            if p.get('min') is None:
+                p['min'] = ref * 0.85
+                print(f"⚠️  Variable '{name}': falta 'min', usando {p['min']:.2f}")
+            if p.get('max') is None:
+                p['max'] = ref * 1.15
+                print(f"⚠️  Variable '{name}': falta 'max', usando {p['max']:.2f}")
+
+        return p
+
     def run(self) -> pd.DataFrame:
         """
         Ejecuta simulación Monte Carlo
@@ -346,15 +405,15 @@ class UniversalMonteCarloEngine:
         for var_config in self.variables_config:
             name = var_config['name']
             dist = var_config['distribution']
-            params = var_config['params']
-            
+            params = self._sanitize_params(name, dist, var_config['params'])
+
             if dist == 'normal':
                 samples[name] = np.random.normal(
                     params['mean'],
                     params['std'],
                     n_sims
                 )
-            
+
             elif dist == 'triangular':
                 samples[name] = np.random.triangular(
                     params['min'],
@@ -362,7 +421,7 @@ class UniversalMonteCarloEngine:
                     params['max'],
                     n_sims
                 )
-            
+
             elif dist == 'uniform':
                 samples[name] = np.random.uniform(
                     params['min'],
