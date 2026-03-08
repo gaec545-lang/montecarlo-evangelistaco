@@ -183,10 +183,77 @@ def login_page():
 # ═══════════════════════════════════════════════════════════════
 
 def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, config,
-                    consultant_name: str = None, client_id: str = None):
+                    consultant_name: str = None, client_id: str = None,
+                    strategic_analysis: Dict = None):
+    from src.executive_dashboard_engine import ExecutiveDashboardEngine
+
     client_name = config.get('client.name', 'Cliente')
     st.markdown(f"<h2 style='color: #1f77b4;'>📊 Dashboard Ejecutivo - {client_name}</h2>",
                 unsafe_allow_html=True)
+    st.markdown("---")
+
+    # ── BUSINESS HEALTH SCORE ─────────────────────────────────────────────
+    mc_input = {'statistics': stats}
+    engine = ExecutiveDashboardEngine(mc_input, strategic_analysis or {}, config)
+    dashboard = engine.generate()
+
+    score = dashboard['health_score']
+    level = dashboard['health_level']
+    briefing = dashboard['executive_briefing']
+    exec_kpis = dashboard['executive_kpis']
+    highlights = dashboard['strategic_highlights']
+
+    col_score, col_brief = st.columns([1, 2])
+    with col_score:
+        st.markdown(
+            f"""
+            <div style='text-align:center; padding:20px; border-radius:12px;
+                        background:{level["color"]}22; border:3px solid {level["color"]};'>
+                <div style='font-size:64px; font-weight:bold; color:{level["color"]};'>{score}</div>
+                <div style='font-size:18px; font-weight:bold; color:{level["color"]};'>{level["label"]}</div>
+                <div style='font-size:12px; color:#666; margin-top:4px;'>Business Health Score</div>
+                <div style='font-size:12px; color:#555; margin-top:8px;'>{level["message"]}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col_brief:
+        st.markdown("**Resumen Ejecutivo**")
+        for i, point in enumerate(briefing, 1):
+            st.markdown(f"{i}. {point}")
+
+        if highlights:
+            st.markdown("**Acciones Recomendadas**")
+            for h in highlights:
+                st.markdown(f"{h['icon']} {h['text']}")
+
+    st.markdown("---")
+
+    # ── EXECUTIVE KPIs CON SEMAFORO ───────────────────────────────────────
+    st.subheader("📋 Indicadores Ejecutivos")
+
+    STATUS_COLORS = {'green': '#27AE60', 'yellow': '#F39C12', 'red': '#E74C3C'}
+    STATUS_ICONS  = {'green': '🟢', 'yellow': '🟡', 'red': '🔴'}
+
+    kpi_cols = st.columns(3)
+    for idx, kpi in enumerate(exec_kpis):
+        col = kpi_cols[idx % 3]
+        with col:
+            color = STATUS_COLORS.get(kpi['status'], '#999')
+            icon_s = STATUS_ICONS.get(kpi['status'], '⚪')
+            st.markdown(
+                f"""
+                <div style='border-left:4px solid {color}; padding:10px 14px;
+                            margin-bottom:10px; background:#F8F9FA; border-radius:4px;'>
+                    <div style='font-size:13px; color:#555;'>{kpi["icon"]} {kpi["name"]} {icon_s}</div>
+                    <div style='font-size:22px; font-weight:bold; color:{color};'>{kpi["value"]}</div>
+                    <div style='font-size:11px; color:#888;'>{kpi["detail"]}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
     st.markdown("---")
 
     st.subheader("📈 Indicadores Clave de Riesgo")
@@ -668,7 +735,8 @@ def main():
     if role == "Ejecutivo":
         consultant_name = user_mgr.get_consultant_for_client(selected_client_id)
         vista_ejecutivo(stats, triggers, results, config,
-                        consultant_name=consultant_name, client_id=selected_client_id)
+                        consultant_name=consultant_name, client_id=selected_client_id,
+                        strategic_analysis=strategic_analysis)
     else:
         vista_consultor(stats, triggers, sensitivity, results, config,
                         business_narrative, recommendations, strategic_analysis)
