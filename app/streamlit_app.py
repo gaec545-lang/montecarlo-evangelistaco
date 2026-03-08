@@ -94,46 +94,149 @@ def render_gauge(value: float, title: str, range_max: float, threshold: float = 
     return fig
 
 
+_CHART_LAYOUT = dict(
+    plot_bgcolor='white',
+    paper_bgcolor='white',
+    font=dict(family='Inter, Helvetica, Arial', size=12, color='#333333'),
+    margin=dict(l=10, r=20, t=50, b=10),
+)
+
+
 def render_tornado_chart(sensitivity_df: pd.DataFrame):
-    df = sensitivity_df.sort_values('importance', ascending=True)
-    fig = px.bar(
-        df,
-        x='importance',
-        y='variable',
+    df = sensitivity_df.sort_values('importance', ascending=True).tail(10)
+    max_val = df['importance'].max() if not df.empty else 1
+
+    colors_list = [
+        f'rgba(26,26,46,{0.4 + 0.6 * (v / max_val)})' for v in df['importance']
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=df['importance'],
+        y=df['variable'],
         orientation='h',
-        title='Analisis de Sensibilidad - Impacto de Variables',
-        labels={'importance': 'Importancia (% de Varianza Explicada)', 'variable': 'Variable'},
-        color='importance',
-        color_continuous_scale='Reds',
-        text=df['importance'].apply(lambda x: f'{x:.1%}')
+        marker=dict(color=colors_list, line=dict(width=0)),
+        text=[f'{v:.1%}' for v in df['importance']],
+        textposition='outside',
+        textfont=dict(size=11, color='#1A1A2E'),
+        hovertemplate='<b>%{y}</b><br>Importancia: %{x:.1%}<extra></extra>',
+    ))
+
+    fig.add_vline(x=0, line_width=1, line_color='#CCCCCC')
+    fig.update_layout(
+        **_CHART_LAYOUT,
+        title=dict(text='Analisis de Sensibilidad — Impacto por Variable',
+                   font=dict(size=15, color='#1A1A2E')),
+        xaxis=dict(title='Importancia (% de Varianza Explicada)',
+                   tickformat='.0%', showgrid=True,
+                   gridcolor='#F0F0F0', zeroline=False),
+        yaxis=dict(title='', tickfont=dict(size=11)),
+        height=max(350, len(df) * 38 + 80),
+        showlegend=False,
     )
-    fig.update_traces(textposition='outside')
-    fig.update_layout(height=400, showlegend=False, xaxis_title="Importancia (%)",
-                      yaxis_title="", font=dict(size=14))
     return fig
 
 
 def render_distribution_chart(results: pd.DataFrame, stats: Dict):
+    import numpy as np
+
+    x = results['outcome']
+    p10, p50, p90 = stats['p10'], stats.get('p50', stats.get('mean', 0)), stats['p90']
+    mean = stats.get('mean', p50)
+    std  = stats.get('std', (p90 - p10) / 2.56)
+
     fig = go.Figure()
+
+    # Zona de pérdida
+    x_min = float(x.min())
+    if x_min < 0:
+        fig.add_vrect(x0=x_min, x1=0, fillcolor='rgba(231,76,60,0.07)',
+                      layer='below', line_width=0,
+                      annotation_text='Zona de Pérdida',
+                      annotation_position='top left',
+                      annotation_font=dict(size=10, color='#E74C3C'))
+
+    # Histograma
     fig.add_trace(go.Histogram(
-        x=results['outcome'], nbinsx=50, name='Distribucion',
-        marker_color='lightblue', opacity=0.7
+        x=x, nbinsx=60, name='Simulaciones',
+        marker=dict(color='rgba(44,62,122,0.55)', line=dict(color='rgba(44,62,122,0.2)', width=0.5)),
+        opacity=0.85, histnorm='probability density',
+        hovertemplate='Rango: %{x:$,.0f}<br>Densidad: %{y:.4f}<extra></extra>',
     ))
-    fig.add_vline(x=stats['p50'], line_dash="dash", line_color="blue",
-                  annotation_text=f"P50: ${stats['p50']:,.0f}")
-    fig.add_vline(x=stats['p10'], line_dash="dash", line_color="red",
-                  annotation_text=f"P10: ${stats['p10']:,.0f}")
-    fig.add_vline(x=stats['p90'], line_dash="dash", line_color="green",
-                  annotation_text=f"P90: ${stats['p90']:,.0f}")
-    fig.add_vrect(
-        x0=results['outcome'].min(), x1=0,
-        fillcolor="red", opacity=0.1, layer="below", line_width=0,
-        annotation_text="Zona de Perdida", annotation_position="top left"
-    )
+
+    # Curva KDE aproximada (normal fit)
+    if std > 0:
+        x_range = np.linspace(float(x.min()), float(x.max()), 300)
+        kde = (1 / (std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_range - mean) / std) ** 2)
+        fig.add_trace(go.Scatter(
+            x=x_range, y=kde, mode='lines', name='Distribucion Normal Ajustada',
+            line=dict(color='#D4AF37', width=2.5),
+            hovertemplate='%{x:$,.0f}<extra></extra>',
+        ))
+
+    # Líneas de percentiles
+    percentile_lines = [
+        (p10, 'P10 — Pesimista',  '#E74C3C', 'dash'),
+        (p50, 'P50 — Base',       '#1A1A2E', 'solid'),
+        (p90, 'P90 — Optimista',  '#27AE60', 'dash'),
+    ]
+    for val, label, color, dash in percentile_lines:
+        fig.add_vline(
+            x=val, line_dash=dash, line_color=color, line_width=2,
+            annotation_text=f'{label}<br>${val:,.0f}',
+            annotation_font=dict(size=10, color=color),
+            annotation_position='top',
+        )
+
     fig.update_layout(
-        title='Distribucion de Resultados (Simulaciones Monte Carlo)',
-        xaxis_title='Resultado (MXN)', yaxis_title='Frecuencia',
-        height=400, showlegend=False
+        **_CHART_LAYOUT,
+        title=dict(text='Distribucion de Resultados — 10,000 Simulaciones Monte Carlo',
+                   font=dict(size=15, color='#1A1A2E')),
+        xaxis=dict(title='Resultado (MXN)', tickformat='$,.0f',
+                   showgrid=True, gridcolor='#F5F5F5', zeroline=False),
+        yaxis=dict(title='Densidad de Probabilidad', showgrid=True, gridcolor='#F5F5F5'),
+        legend=dict(orientation='h', y=-0.18, x=0.5, xanchor='center',
+                    font=dict(size=10)),
+        height=420,
+    )
+    return fig
+
+
+def render_percentile_fan(stats: Dict):
+    """Grafico de abanico mostrando el rango de escenarios visualmente."""
+    percentiles = ['P10', 'P25', 'P50', 'P75', 'P90']
+    keys        = ['p10', 'p25', 'p50', 'p75', 'p90']
+    values      = [stats.get(k, 0) for k in keys]
+    colors_bar  = [
+        'rgba(231,76,60,0.75)',
+        'rgba(230,126,34,0.75)',
+        'rgba(26,26,46,0.85)',
+        'rgba(39,174,96,0.6)',
+        'rgba(39,174,96,0.85)',
+    ]
+
+    fig = go.Figure()
+    for pct, val, col in zip(percentiles, values, colors_bar):
+        fig.add_trace(go.Bar(
+            name=pct, x=[pct], y=[val],
+            marker_color=col,
+            text=[f'${val:,.0f}'],
+            textposition='outside',
+            textfont=dict(size=12, color='#333'),
+            hovertemplate=f'<b>{pct}</b>: ${val:,.0f}<extra></extra>',
+        ))
+
+    fig.add_hline(y=0, line_width=1.5, line_color='#999', line_dash='dot')
+    fig.update_layout(
+        **_CHART_LAYOUT,
+        title=dict(text='Escenarios de Resultado — Fan Chart de Percentiles',
+                   font=dict(size=15, color='#1A1A2E')),
+        xaxis=dict(title='Escenario', showgrid=False),
+        yaxis=dict(title='Resultado (MXN)', tickformat='$,.0f',
+                   showgrid=True, gridcolor='#F5F5F5', zeroline=True,
+                   zerolinecolor='#CCCCCC'),
+        showlegend=False,
+        height=380,
+        bargap=0.35,
     )
     return fig
 
@@ -323,8 +426,13 @@ y recomendaciones priorizadas, contacte a su consultor asignado.
         st.warning("⚠️ No tiene consultor asignado. Contacte al administrador.")
 
     st.markdown("---")
-    st.subheader("📊 Distribucion de Resultados")
-    st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
+    dist_col1, dist_col2 = st.columns(2)
+    with dist_col1:
+        st.subheader("📊 Distribucion de Resultados")
+        st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
+    with dist_col2:
+        st.subheader("📐 Escenarios — Fan Chart")
+        st.plotly_chart(render_percentile_fan(stats), use_container_width=True)
 
 
 def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame,
@@ -382,8 +490,13 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
         st.success("✅ No hay recomendaciones de mitigacion criticas por el momento.")
 
     st.markdown("---")
-    st.subheader("📊 Distribucion de Resultados")
-    st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
+    chart_col1, chart_col2 = st.columns(2)
+    with chart_col1:
+        st.subheader("📊 Distribucion de Resultados")
+        st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
+    with chart_col2:
+        st.subheader("📐 Escenarios — Fan Chart")
+        st.plotly_chart(render_percentile_fan(stats), use_container_width=True)
 
     # ── STRATEGIC ADVISOR (FASE 5) ────────────────────────────────────────
     if strategic_analysis and 'error' not in strategic_analysis:
@@ -555,27 +668,117 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 def main():
     st.markdown("""
         <style>
-            [data-testid="stSidebarNav"] {display: none !important;}
-            .stButton>button { border: 1px solid #D4AF37; background-color: transparent; }
-            .stButton>button:hover { border: 1px solid #1A1A2E; color: #1A1A2E; }
-            [data-testid="stSidebar"] p,
-            [data-testid="stSidebar"] span,
-            [data-testid="stSidebar"] label,
-            [data-testid="stSidebar"] h3,
-            [data-testid="stSidebar"] strong {
-                color: #FFFFFF !important;
-            }
-            div[data-baseweb="base-input"],
-            div[data-baseweb="select"] > div {
-                background-color: #FFFFFF !important;
-                border: 1px solid #D4AF37 !important;
-                border-radius: 4px;
-            }
-            div[data-baseweb="base-input"] input,
-            div[data-baseweb="select"] div {
-                color: #1A1A2E !important;
-                -webkit-text-fill-color: #1A1A2E !important;
-            }
+        /* ── GOOGLE FONT ── */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        /* ── GLOBAL ── */
+        html, body, [class*="css"] { font-family: 'Inter', Helvetica, Arial, sans-serif !important; }
+        [data-testid="stSidebarNav"] { display: none !important; }
+
+        /* ── SIDEBAR ── */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #1A1A2E 0%, #16213E 100%) !important;
+            border-right: 2px solid #D4AF37;
+        }
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] li,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] strong {
+            color: #E8E8E8 !important;
+        }
+        [data-testid="stSidebar"] .stCaption { color: #999 !important; }
+        [data-testid="stSidebar"] hr { border-color: #D4AF3766 !important; }
+
+        /* ── SIDEBAR SELECTBOX ── */
+        [data-testid="stSidebar"] div[data-baseweb="select"] > div {
+            background: #0F3460 !important;
+            border: 1px solid #D4AF37 !important;
+            border-radius: 6px;
+            color: #FFFFFF !important;
+        }
+        [data-testid="stSidebar"] div[data-baseweb="select"] div { color: #FFFFFF !important; }
+
+        /* ── BUTTONS ── */
+        .stButton > button {
+            border: 1.5px solid #D4AF37 !important;
+            background: transparent !important;
+            color: #D4AF37 !important;
+            border-radius: 6px !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            transition: all 0.2s ease;
+        }
+        .stButton > button:hover {
+            background: #D4AF37 !important;
+            color: #1A1A2E !important;
+        }
+
+        /* ── INPUTS (login / forms) ── */
+        div[data-baseweb="base-input"],
+        div[data-baseweb="select"] > div {
+            background-color: #FFFFFF !important;
+            border: 1px solid #D4AF37 !important;
+            border-radius: 6px;
+        }
+        div[data-baseweb="base-input"] input,
+        div[data-baseweb="select"] div {
+            color: #1A1A2E !important;
+            -webkit-text-fill-color: #1A1A2E !important;
+        }
+
+        /* ── METRIC CARDS ── */
+        [data-testid="stMetric"] {
+            background: #F8F9FF;
+            border: 1px solid #E0E4F0;
+            border-left: 4px solid #1A1A2E;
+            border-radius: 8px;
+            padding: 12px 16px;
+        }
+        [data-testid="stMetricLabel"] { font-size: 12px !important; color: #666 !important; }
+        [data-testid="stMetricValue"] { font-size: 22px !important; font-weight: 700 !important; color: #1A1A2E !important; }
+
+        /* ── EXPANDERS ── */
+        details[data-testid="stExpander"] summary {
+            background: #F8F9FF;
+            border: 1px solid #E0E4F0;
+            border-radius: 6px;
+            font-weight: 600;
+            color: #1A1A2E;
+        }
+
+        /* ── TABS ── */
+        [data-testid="stTabs"] button[data-baseweb="tab"] {
+            font-weight: 600;
+            color: #666;
+            border-bottom: 3px solid transparent;
+        }
+        [data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+            color: #1A1A2E;
+            border-bottom: 3px solid #D4AF37;
+        }
+
+        /* ── DOWNLOAD BUTTON ── */
+        [data-testid="stDownloadButton"] > button {
+            background: #D4AF37 !important;
+            color: #1A1A2E !important;
+            border: none !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stDownloadButton"] > button:hover {
+            background: #B8962E !important;
+        }
+
+        /* ── INFO / WARNING / ERROR BOXES ── */
+        [data-testid="stAlert"] { border-radius: 8px !important; }
+
+        /* ── DATAFRAMES ── */
+        [data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+
+        /* ── PAGE HEADER ── */
+        h1, h2 { color: #1A1A2E !important; letter-spacing: -0.3px; }
+        h3 { color: #2C3E7A !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -626,8 +829,8 @@ def main():
             st.markdown("---")
 
         st.markdown("---")
-        st.caption("• Pipeline: 5 Fases")
-        st.caption("• Motor: Decision Intelligence")
+        st.caption("Pipeline: 5 Fases")
+        st.caption("Motor: Monte Carlo + Llama 3.3-70B")
         st.markdown("---")
         st.caption("© 2026 Evangelista & Co.")
 
@@ -696,11 +899,16 @@ def main():
         st.stop()
 
     # ═══ CARGAR Y EJECUTAR PIPELINE ═══
-    with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client.name}..."):
-        pipeline, config = load_pipeline(selected_client_id, selected_client.config_file)
+    pipeline, config = load_pipeline(selected_client_id, selected_client.config_file)
 
-    with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (5 Fases)..."):
+    with st.status("⚙️ Ejecutando Decision Pipeline...", expanded=True) as status_box:
+        st.write("**Fase 1** — Ajuste de datos y parámetros estadísticos")
+        st.write("**Fase 2** — Simulación Monte Carlo (10,000 iteraciones)")
+        st.write("**Fase 3** — Traducción ejecutiva de resultados")
+        st.write("**Fase 4** — Motor de Inteligencia de Decisiones")
+        st.write("**Fase 5** — Strategic Advisor (Llama 3.3-70B)")
         pipeline_results = run_pipeline(pipeline)
+        status_box.update(label="✅ Pipeline completado", state="complete", expanded=False)
 
     results = pipeline_results['simulation_results']
     stats = pipeline_results['statistics']
@@ -730,7 +938,38 @@ def main():
     with st.sidebar:
         n_sims = config.get('simulation.iterations',
                             config.get('simulation.n_simulations', 10000))
-        st.caption(f"• Simulaciones: {n_sims:,}")
+        exec_summary = pipeline_results.get('execution_summary', {})
+        phases_done  = sum(1 for k, v in exec_summary.items() if k.endswith('_completed') and v)
+        health_score = None
+        try:
+            from src.executive_dashboard_engine import ExecutiveDashboardEngine as _EDE
+            _eng = _EDE({'statistics': pipeline_results.get('statistics', {})})
+            health_score = _eng.generate()['health_score']
+        except Exception:
+            pass
+
+        industry = config.get('client.industry', config.get('client_info.industry', ''))
+        st.markdown(
+            f"""
+            <div style='background:#0F3460; border:1px solid #D4AF3766; border-radius:8px;
+                        padding:12px; margin-bottom:8px;'>
+                <div style='color:#D4AF37; font-weight:700; font-size:13px;'>{selected_client.name}</div>
+                <div style='color:#AAA; font-size:11px; margin-top:2px;'>{industry}</div>
+                <div style='margin-top:8px; display:flex; gap:8px;'>
+                    <span style='background:#1A1A2E; color:#D4AF37; border-radius:4px;
+                                 padding:2px 7px; font-size:10px; font-weight:600;'>
+                        {n_sims:,} sims
+                    </span>
+                    <span style='background:#1A1A2E; color:#27AE60; border-radius:4px;
+                                 padding:2px 7px; font-size:10px; font-weight:600;'>
+                        {phases_done}/5 fases
+                    </span>
+                    {f'<span style="background:#1A1A2E; color:#D4AF37; border-radius:4px; padding:2px 7px; font-size:10px; font-weight:600;">Score {health_score}</span>' if health_score is not None else ''}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     if role == "Ejecutivo":
         consultant_name = user_mgr.get_consultant_for_client(selected_client_id)
