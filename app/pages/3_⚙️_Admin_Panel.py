@@ -62,13 +62,14 @@ with st.sidebar:
     st.caption("© 2026 Evangelista & Co.")
 
 # ==============================================================================
-# 3. INICIALIZACIÓN DEL DATA MESH (SUPABASE)
+# 3. INICIALIZACIÓN DEL DATA MESH (SUPABASE) - CORRECCIÓN DE CACHÉ
 # ==============================================================================
+# Extracción de llaves FUERA de la función caché para evitar el error de diccionario inmutable
+_url = os.getenv("SUPABASE_URL") or (st.secrets.get("SUPABASE_URL") if hasattr(st, "secrets") else None)
+_key = os.getenv("SUPABASE_KEY") or (st.secrets.get("SUPABASE_KEY") if hasattr(st, "secrets") else None)
+
 @st.cache_resource
-def init_supabase():
-    url = os.getenv("SUPABASE_URL") or (st.secrets.get("SUPABASE_URL") if hasattr(st, "secrets") else None)
-    key = os.getenv("SUPABASE_KEY") or (st.secrets.get("SUPABASE_KEY") if hasattr(st, "secrets") else None)
-    
+def init_supabase(url: str, key: str):
     if not url or not key:
         return None
     try:
@@ -76,7 +77,8 @@ def init_supabase():
     except Exception:
         return None
 
-supabase = init_supabase()
+# Instanciamos el cliente pasándole las cadenas de texto puras
+supabase = init_supabase(_url, _key)
 
 # ==============================================================================
 # 4. INTERFAZ DIRECTIVA
