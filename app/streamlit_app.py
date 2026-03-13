@@ -1,14 +1,27 @@
+# ==============================================================================
+# INYECCIÓN DE ENRUTAMIENTO (Grado Militar - Bypass Estructural)
+# Esto debe ir ANTES de importar cualquier módulo de 'src'
+# ==============================================================================
+import sys
+import os
+
+# 1. Detectamos la ubicación física exacta de este archivo (streamlit_app.py)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Forzamos a Python a subir exactamente un nivel para establecer la raíz del sistema
+# Esto garantiza que la carpeta 'src' sea visible sin importar cómo Streamlit clone el repo
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, '..'))
+
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+# --- A PARTIR DE AQUÍ VAN TUS IMPORTACIONES ORIGINALES ---
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from typing import Dict, List, Any
-import sys
-import os
 from datetime import datetime, timedelta
-
-# Agregar path del proyecto para imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.user_manager import UserManager
 from src.configuration_manager import ConfigurationManager
@@ -54,7 +67,6 @@ def load_pipeline(client_file: str):
 @st.cache_data
 def run_pipeline(_pipeline):
     return _pipeline.execute()
-
 
 # ═══════════════════════════════════════════════════════════════
 # FUNCIONES DE VISUALIZACIÓN
@@ -150,14 +162,14 @@ def login_page():
                 st.session_state.role = user.role
                 st.session_state.username = user.nombre_completo
                 st.session_state.user_email = user.email
-                st.session_state.client_id = getattr(user, 'client_id', None)  # <--- NUEVO
+                st.session_state.client_id = getattr(user, 'client_id', None)
                 st.session_state.last_activity = datetime.now().isoformat()
                 st.rerun()
             else:
                 st.error("❌ Credenciales inválidas o cuenta bloqueada temporalmente.")
 
 # ═══════════════════════════════════════════════════════════════
-# VISTA EJECUTIVO (CLIENTE)
+# VISTAS (EJECUTIVO / CONSULTOR)
 # ═══════════════════════════════════════════════════════════════
 
 def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, config):
@@ -166,7 +178,6 @@ def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, co
     
     st.subheader("📈 Indicadores Clave de Riesgo")
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         threshold_loss = config.get('thresholds.critical_loss_prob', 0.25)
         st.plotly_chart(render_gauge(stats['prob_loss'], "Probabilidad de Pérdida", 1.0, threshold_loss), use_container_width=True)
@@ -193,7 +204,6 @@ def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, co
             if nivel == 'CRÍTICO': st.error(f"🔴 **{nivel}**: {trigger.get('mensaje', '')}")
             elif nivel == 'ALTO': st.warning(f"🟡 **{nivel}**: {trigger.get('mensaje', '')}")
             else: st.info(f"🟠 **{nivel}**: {trigger.get('mensaje', '')}")
-            st.caption(f"Métrica afectada: {trigger.get('metrica', 'General')}")
         st.info("💡 **Nota**: Para un análisis detallado, contacte a su consultor de Evangelista & Co.")
     else:
         st.success("✅ No hay alertas activas. Todos los indicadores dentro de parámetros normales.")
@@ -201,11 +211,6 @@ def vista_ejecutivo(stats: Dict, triggers: List[Dict], results: pd.DataFrame, co
     st.markdown("---")
     st.subheader("📊 Distribución de Resultados")
     st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
-
-
-# ═══════════════════════════════════════════════════════════════
-# VISTA CONSULTOR (EVANGELISTA & CO.)
-# ═══════════════════════════════════════════════════════════════
 
 def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame, results: pd.DataFrame, config, business_narrative: str, recommendations: List[Dict]):
     st.markdown(f"""
@@ -226,8 +231,9 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
     
     st.markdown("---")
     st.subheader("📝 Traducción Ejecutiva (Fase 3)")
-    st.info(business_narrative.get('confidence_level', ''))
-    st.markdown(business_narrative.get('executive_summary', ''))
+    if isinstance(business_narrative, dict):
+        st.info(business_narrative.get('confidence_level', ''))
+        st.markdown(business_narrative.get('executive_summary', ''))
     
     st.markdown("---")
     st.subheader("🎯 Análisis de Sensibilidad - Diagnóstico Raíz")
@@ -256,36 +262,20 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
 def main():
     st.markdown("""
         <style>
-            /* Ocultar menú genérico y estilizar botones */
             [data-testid="stSidebarNav"] {display: none !important;}
             .stButton>button { border: 1px solid #D4AF37; background-color: transparent; }
             .stButton>button:hover { border: 1px solid #1A1A2E; color: #1A1A2E; }
-            
-            /* INYECCIÓN DE ALTO CONTRASTE PARA EL PANEL LATERAL */
-            [data-testid="stSidebar"] p, 
-            [data-testid="stSidebar"] span, 
-            [data-testid="stSidebar"] label, 
-            [data-testid="stSidebar"] h3, 
-            [data-testid="stSidebar"] strong { 
-                color: #FFFFFF !important; 
+            [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, 
+            [data-testid="stSidebar"] label, [data-testid="stSidebar"] h3, 
+            [data-testid="stSidebar"] strong { color: #FFFFFF !important; }
+            div[data-baseweb="base-input"], div[data-baseweb="select"] > div {
+                background-color: #FFFFFF !important; border: 1px solid #D4AF37 !important; border-radius: 4px;
             }
-
-            /* CORRECCIÓN DE CAJAS DE TEXTO (Forzar Blanco y Texto Oscuro) */
-            div[data-baseweb="base-input"], 
-            div[data-baseweb="select"] > div {
-                background-color: #FFFFFF !important;
-                border: 1px solid #D4AF37 !important;
-                border-radius: 4px;
-            }
-            div[data-baseweb="base-input"] input,
-            div[data-baseweb="select"] div {
-                color: #1A1A2E !important;
-                -webkit-text-fill-color: #1A1A2E !important;
+            div[data-baseweb="base-input"] input, div[data-baseweb="select"] div {
+                color: #1A1A2E !important; -webkit-text-fill-color: #1A1A2E !important;
             }
         </style>
     """, unsafe_allow_html=True)
-    
-    # ... (aquí sigue tu código con los st.session_state) ...
     
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
@@ -326,19 +316,18 @@ def main():
             st.page_link("pages/3_⚙️_Admin_Panel.py", label="Panel de Administración", icon="⚙️")
             st.markdown("---")
             
-            # --- SELECTOR DE CONSULTOR (VISTA PANÓPTICA) ---
             st.markdown("**🏢 Portafolio de Clientes:**")
-            import os
-            try:
+            
+            # --- PROTECCIÓN CONTRA DIRECTORIOS VACÍOS ---
+            client_files = []
+            if os.path.exists('configs/clients'):
                 client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
-                if not client_files:
-                    client_files = ['test_pasteleria_config.yaml']
-            except FileNotFoundError:
-                client_files = ['test_pasteleria_config.yaml']
+                
+            if not client_files:
+                client_files = ['SIN_CLIENTES']
 
             selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
         else:
-            # --- VISTA ESTRICTA DE EJECUTIVO (AISLADA) ---
             st.markdown("---")
             st.markdown("**🏢 Panel de Cliente:**")
             client_id = st.session_state.get('client_id', 'Desconocido')
@@ -353,26 +342,45 @@ def main():
         st.markdown("---")
         st.caption("© 2026 Evangelista & Co.")
 
-    # ═════ ESTO DEBE ESTAR FUERA DEL SIDEBAR ═════
-    with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client_file}..."):
-        pipeline, config = load_pipeline(selected_client_file)
-    
-    with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (4 Fases)..."):
-        pipeline_results = run_pipeline(pipeline)
+    # ═════ LÓGICA DE PROTECCIÓN (ESTADO VACÍO) ═════
+    if selected_client_file == 'SIN_CLIENTES':
+        st.markdown("<h2 style='color: #1f77b4;'>🛡️ Sentinel Data Mesh en Línea</h2>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.info("La infraestructura está operativa, pero no se detectaron Cerebros Estocásticos (YAMLs) activos en el almacenamiento local.")
         
-        results = pipeline_results['simulation_results']
-        stats = pipeline_results['statistics']
-        sensitivity = pipeline_results['sensitivity']
-        business_narrative = pipeline_results['business_narrative']
-        recommendations = pipeline_results['recommendations']
-        triggers = []
+        st.markdown("""
+        ### Próximos Pasos Directivos:
+        1. Dirígete al **Panel de Administración** utilizando el menú lateral izquierdo.
+        2. Configura a tu primer cliente corporativo (Ej. Cibrián).
+        3. Utiliza la Pestaña 5 para que el **Agente IA de Llama 3** genere el modelo matemático.
+        """)
+        return # Detiene la ejecución para no lanzar el Pipeline y evitar el FileNotFoundError
+
+    # ═════ EJECUCIÓN DEL PIPELINE (SI HAY CLIENTES) ═════
+    try:
+        with st.spinner(f"⚙️ Inicializando Decision Pipeline para {selected_client_file}..."):
+            pipeline, config = load_pipeline(selected_client_file)
         
-    if st.session_state.role == "Ejecutivo":
-        vista_ejecutivo(stats, triggers, results, config)
-    elif st.session_state.role == "Consultor":
-        vista_consultor(stats, triggers, sensitivity, results, config, business_narrative, recommendations)
-    else:
-        st.error("❌ Rol no reconocido")
+        with st.spinner("🧠 Ejecutando Inteligencia de Decisiones (4 Fases)..."):
+            pipeline_results = run_pipeline(pipeline)
+            
+            results = pipeline_results['simulation_results']
+            stats = pipeline_results['statistics']
+            sensitivity = pipeline_results['sensitivity']
+            business_narrative = pipeline_results['business_narrative']
+            recommendations = pipeline_results['recommendations']
+            triggers = []
+            
+        if st.session_state.role == "Ejecutivo":
+            vista_ejecutivo(stats, triggers, results, config)
+        elif st.session_state.role == "Consultor":
+            vista_consultor(stats, triggers, sensitivity, results, config, business_narrative, recommendations)
+        else:
+            st.error("❌ Rol no reconocido")
+            
+    except FileNotFoundError as e:
+        st.error(f"❌ Error Estructural: No se encontró el archivo físico del cliente. {str(e)}")
+        st.info("Por favor, asegúrate de generar el YAML en el Panel de Administración.")
 
 if __name__ == "__main__":
     main()
