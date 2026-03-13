@@ -1,3 +1,14 @@
+# ==============================================================================
+# INYECCIÓN DE ENRUTAMIENTO (Bypass de Subcarpetas en Streamlit Cloud)
+# Esto debe ir ANTES de importar cualquier módulo de 'src'
+# ==============================================================================
+import sys
+import os
+
+# Forzamos a Python a reconocer la carpeta 'evangelista-montecarlo' como la raíz
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 import streamlit as st
 import pandas as pd
 import os
