@@ -6,6 +6,7 @@ from src.monte_carlo_engine import UniversalMonteCarloEngine
 from src.business_translator import BusinessTranslator
 from src.decision_intelligence_engine import DecisionIntelligenceEngine
 from src.forecasting_engine import ForecastingEngine
+from src.stress_testing_engine import StressTestingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,23 @@ class DecisionPipeline:
             print(f"❌ FASE {phase_number} falló: {str(e)}")
             raise PipelineExecutionError(f"Pipeline detenido en Fase {phase_number}: {e}")
 
+    def run_stress_testing(self, forecasting_results: dict,
+                           n_scenarios: int = 10_000) -> dict:
+        """
+        FASE 0b: Escudo 2 - Trituradora (Stress Testing Engine).
+        Aplica choques macroeconómicos correlacionados + SimPy.
+        No lanza excepción: devuelve dict vacío si falla.
+        """
+        try:
+            engine = StressTestingEngine(
+                forecasting_results=forecasting_results,
+                caja_inicial=self.config.get('thresholds.caja_inicial', 500_000),
+            )
+            return engine.run_stress_tests(n_scenarios=n_scenarios)
+        except Exception as e:
+            logger.warning(f"StressTestingEngine falló (continuando): {e}")
+            return {"error": str(e)}
+
     def run_forecasting(self, horizonte_meses: int = 12) -> dict:
         """
         FASE 0: Escudo 1 - Radar (Forecasting Engine).
@@ -66,10 +84,15 @@ class DecisionPipeline:
 
     def execute(self, horizonte_meses: int = 12) -> dict:
         # FASE 0: Escudo 1 - Forecasting (nueva)
-        # Proyección temporal a 12 meses - no bloquea el pipeline si falla
         forecasting_results = self.run_phase(
             0, "Escudo 1 - Forecasting Engine (Radar)",
             lambda: self.run_forecasting(horizonte_meses)
+        )
+
+        # FASE 0b: Escudo 2 - Stress Testing (nueva)
+        stress_results = self.run_phase(
+            0, "Escudo 2 - Stress Testing Engine (Trituradora)",
+            lambda: self.run_stress_testing(forecasting_results)
         )
 
         # FASE 1: Extracción (mantenida por compatibilidad)
@@ -98,7 +121,8 @@ class DecisionPipeline:
 
         return {
             'raw_data': extracted_data,
-            'forecasting_results': forecasting_results,       # NUEVO: Escudo 1
+            'forecasting_results': forecasting_results,       # Escudo 1
+            'stress_results': stress_results,                 # Escudo 2
             'simulation_results': mc_results['results'],
             'statistics': mc_results['statistics'],
             'sensitivity': mc_results['sensitivity'],
