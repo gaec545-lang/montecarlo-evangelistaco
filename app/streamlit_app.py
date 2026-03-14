@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from src.user_manager import UserManager
 from src.configuration_manager import ConfigurationManager
 from src.decision_pipeline import DecisionPipeline
+from src.report_generator import ReportGenerator
 
 # ═══════════════════════════════════════════════════════════════
 # CONFIGURACIÓN DE PÁGINA
@@ -256,6 +257,330 @@ def vista_consultor(stats: Dict, triggers: List[Dict], sensitivity: pd.DataFrame
     st.plotly_chart(render_distribution_chart(results, stats), use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════
+# EXPORTACIÓN DE REPORTES
+# ═══════════════════════════════════════════════════════════════
+
+def render_export_section(pipeline_results: dict, client_name: str, role: str):
+    """Sección de exportación PDF/DOCX para Consultores."""
+    st.markdown("---")
+    st.subheader("📄 Exportar Reporte Corporativo")
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
+        if st.button("📄 Generar PDF", use_container_width=True):
+            with st.spinner("Generando PDF..."):
+                try:
+                    gen = ReportGenerator(client_name=client_name, results=pipeline_results)
+                    pdf_path = gen.generate_pdf(f"/tmp/Sentinel_{client_name.replace(' ', '_')}.pdf")
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Descargar PDF",
+                            data=f,
+                            file_name=f"Sentinel_{client_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+                except Exception as e:
+                    st.error(f"Error generando PDF: {e}")
+
+    with col2:
+        if role in ["Consultor", "Admin"] and st.button("📝 Generar DOCX", use_container_width=True):
+            with st.spinner("Generando DOCX..."):
+                try:
+                    gen = ReportGenerator(client_name=client_name, results=pipeline_results)
+                    docx_path = gen.generate_docx(f"/tmp/Sentinel_{client_name.replace(' ', '_')}.docx")
+                    with open(docx_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Descargar DOCX",
+                            data=f,
+                            file_name=f"Sentinel_{client_name}_{datetime.now().strftime('%Y%m%d')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                        )
+                except Exception as e:
+                    st.error(f"Error generando DOCX: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# VISTA CONSULTOR V2 — 3 ESCUDOS
+# ═══════════════════════════════════════════════════════════════
+
+def vista_consultor_v2(pipeline_results: dict, config):
+    """Vista técnica completa con los 3 Escudos y semáforo predictivo."""
+    client_name = config.get('client.name', 'Cliente')
+
+    st.markdown(f"""
+        <h2 style='color:#d62728;'>🛡️ Decision Intelligence — 3 Escudos</h2>
+        <h4 style='color:#666;'>Cliente: {client_name} | {config.get('client.industry','')}</h4>
+    """, unsafe_allow_html=True)
+
+    tab_resumen, tab_escudo1, tab_escudo2, tab_escudo3, tab_mc, tab_reportes = st.tabs([
+        "🚦 Semáforo",
+        "📊 Escudo 1: Proyecciones",
+        "⚡ Escudo 2: Riesgo",
+        "🎯 Escudo 3: Rescate",
+        "🎲 Monte Carlo",
+        "📄 Reportes",
+    ])
+
+    # ── TAB 1: SEMÁFORO ──────────────────────────────────────────────────────
+    with tab_resumen:
+        stress = pipeline_results.get('stress_results', {})
+        prob   = stress.get('probabilidad_crisis', 0)
+        mes_c  = stress.get('mes_critico')
+
+        if prob > 0.30:
+            st.error(f"🔴 **ALERTA DE CRISIS** — Probabilidad: {prob:.1%} | Mes crítico: {mes_c}")
+        elif prob > 0.15:
+            st.warning(f"🟡 **PRECAUCIÓN** — Probabilidad de crisis: {prob:.1%}")
+        else:
+            st.success(f"🟢 **SITUACIÓN SALUDABLE** — Probabilidad de crisis: {prob:.1%}")
+
+        semaforo = stress.get('semaforo', {})
+        if semaforo:
+            st.subheader("Semáforo Predictivo — 12 Meses")
+            cols = st.columns(12)
+            for mes in range(1, 13):
+                s = semaforo.get(mes, {})
+                emoji = s.get('emoji', '🟢')
+                estado = s.get('estado', 'OK')
+                prob_m = s.get('prob', 0)
+                with cols[mes - 1]:
+                    st.metric(f"M{mes}", f"{emoji}", f"{prob_m:.0%}")
+
+        # Métricas rápidas
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        stats = pipeline_results.get('statistics', {})
+        col1.metric("P50 Monte Carlo", f"${stats.get('p50', 0):,.0f}")
+        col2.metric("Prob. Pérdida",   f"{stats.get('prob_loss', 0):.1%}", delta_color="inverse")
+        col3.metric("Prob. Crisis",    f"{prob:.1%}", delta_color="inverse")
+        col4.metric("Mes Crítico",     f"Mes {mes_c}" if mes_c else "Ninguno")
+
+    # ── TAB 2: ESCUDO 1 ──────────────────────────────────────────────────────
+    with tab_escudo1:
+        forecasting = pipeline_results.get('forecasting_results', {})
+        if not forecasting or 'error' in forecasting:
+            st.warning("Escudo 1 no disponible." + (f" Error: {forecasting.get('error','')}" if forecasting else ""))
+        else:
+            df_flujo = forecasting.get('flujo_libre_12m')
+            if df_flujo is not None and not df_flujo.empty:
+                c1, c2 = st.columns(2)
+                with c1:
+                    fig_i = px.line(
+                        df_flujo, x='fecha', y='ingresos',
+                        title="Ingresos Proyectados (MXN)",
+                        labels={'ingresos': 'Ingresos', 'fecha': 'Fecha'},
+                        color_discrete_sequence=['#1f77b4'],
+                    )
+                    st.plotly_chart(fig_i, use_container_width=True)
+                with c2:
+                    fig_c = px.line(
+                        df_flujo, x='fecha', y='costos',
+                        title="Costos Proyectados (MXN)",
+                        labels={'costos': 'Costos', 'fecha': 'Fecha'},
+                        color_discrete_sequence=['#d62728'],
+                    )
+                    st.plotly_chart(fig_c, use_container_width=True)
+
+                fig_f = px.bar(
+                    df_flujo, x='fecha', y='flujo_libre',
+                    title="Flujo Libre Mensual (MXN)",
+                    color='flujo_libre',
+                    color_continuous_scale=['red', 'yellow', 'green'],
+                )
+                st.plotly_chart(fig_f, use_container_width=True)
+
+                # Volatilidad TIIE
+                df_vol = forecasting.get('volatilidad_tiie')
+                if df_vol is not None and not df_vol.empty:
+                    st.subheader("Volatilidad TIIE — GARCH(1,1)")
+                    fig_v = px.line(
+                        df_vol, x='fecha', y='volatilidad_proyectada',
+                        title="Volatilidad Proyectada TIIE (%)",
+                        color_discrete_sequence=['#ff7f0e'],
+                    )
+                    st.plotly_chart(fig_v, use_container_width=True)
+
+            estacional = forecasting.get('estacionalidad_detectada', {})
+            if estacional.get('detectada'):
+                st.info(
+                    f"📅 **Estacionalidad detectada** — "
+                    f"Mes pico: **{estacional.get('mes_pico')}** | "
+                    f"Mes valle: **{estacional.get('mes_valle')}**"
+                )
+
+    # ── TAB 3: ESCUDO 2 ──────────────────────────────────────────────────────
+    with tab_escudo2:
+        stress = pipeline_results.get('stress_results', {})
+        if not stress or 'error' in stress:
+            st.warning("Escudo 2 no disponible.")
+        else:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Prob. Quiebra Liquidez", f"{stress.get('probabilidad_crisis', 0):.1%}")
+            col2.metric("Mes Crítico", f"Mes {stress.get('mes_critico', 'N/A')}")
+            dp = stress.get('default_probability', {})
+            col3.metric("Prob. Default Clientes", f"{dp.get('prob_default_media', 0):.1%}")
+
+            st.markdown(f"**Evento Detonante:** {stress.get('evento_detonante', 'N/A')}")
+
+            perc = stress.get('percentiles_caja', {})
+            if perc:
+                st.subheader("Distribución de Caja Proyectada")
+                perc_df = pd.DataFrame([
+                    {"Percentil": "P10 (Pesimista)", "Caja": perc.get('p10', 0)},
+                    {"Percentil": "P25",              "Caja": perc.get('p25', 0)},
+                    {"Percentil": "P50 (Base)",        "Caja": perc.get('p50', 0)},
+                    {"Percentil": "P75",              "Caja": perc.get('p75', 0)},
+                    {"Percentil": "P90 (Optimista)",  "Caja": perc.get('p90', 0)},
+                ])
+                fig_perc = px.bar(perc_df, x='Percentil', y='Caja',
+                                  title="Escenarios de Caja al Final del Horizonte",
+                                  color='Caja', color_continuous_scale='RdYlGn')
+                st.plotly_chart(fig_perc, use_container_width=True)
+
+            top = stress.get('top_escenarios_riesgo', [])
+            if top:
+                st.subheader("Top 5 Escenarios de Mayor Riesgo")
+                st.dataframe(pd.DataFrame(top), use_container_width=True)
+
+    # ── TAB 4: ESCUDO 3 ──────────────────────────────────────────────────────
+    with tab_escudo3:
+        opt = pipeline_results.get('optimization_results', {})
+        if not opt or 'error' in opt:
+            st.warning("Escudo 3 no disponible.")
+        elif not opt.get('crisis_detectada'):
+            st.success(f"✅ {opt.get('mensaje', 'No se requiere plan de rescate.')}")
+        else:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Capital Total a Liberar", f"${opt.get('capital_total_liberado', 0):,.0f} MXN")
+            col2.metric("ROI del Plan", f"{opt.get('roi_estimado', 0)}x")
+            col3.metric("Mes Crítico", f"Mes {opt.get('mes_critico', 'N/A')}")
+
+            st.markdown(f"**Evento Detonante:** {opt.get('evento_detonante', 'N/A')}")
+            st.markdown("---")
+
+            for i, est in enumerate(opt.get('estrategias', []), 1):
+                with st.expander(
+                    f"Estrategia #{i}: {est.get('titulo', '')} — ${est.get('capital_liberado', 0):,.0f} MXN",
+                    expanded=(i == 1)
+                ):
+                    col_a, col_b = st.columns([2, 1])
+                    with col_a:
+                        st.write(f"**Acción:** {est.get('accion', '')}")
+                        st.write(est.get('descripcion', ''))
+                    with col_b:
+                        st.metric("Capital Liberado", f"${est.get('capital_liberado', 0):,.0f}")
+                        st.caption(f"⏰ {est.get('deadline', '')}")
+
+            oc = opt.get('optimizacion_conjunta', {})
+            if oc and 'liquidez_total' in oc:
+                st.markdown("---")
+                st.subheader("Optimización Conjunta (CVXPY)")
+                oc_df = pd.DataFrame([{
+                    "OPEX Reducción":  f"{oc.get('opex_reduccion', 0):.1%}",
+                    "Días Diferimiento": f"{oc.get('dias_diferimiento', 0):.0f}",
+                    "Factoraje":       f"{oc.get('fraccion_factoraje', 0):.0%}",
+                    "Liquidez Total":  f"${oc.get('liquidez_total', 0):,.0f}",
+                    "Impacto Operativo": f"{oc.get('impacto_operativo', 0):.0%}",
+                }])
+                st.dataframe(oc_df, use_container_width=True)
+
+    # ── TAB 5: MONTE CARLO (vista original) ──────────────────────────────────
+    with tab_mc:
+        stats       = pipeline_results.get('statistics', {})
+        sensitivity = pipeline_results.get('sensitivity', pd.DataFrame())
+        results_df  = pipeline_results.get('simulation_results', pd.DataFrame())
+        narrative   = pipeline_results.get('business_narrative', {})
+        recs        = pipeline_results.get('recommendations', [])
+
+        if stats:
+            col1, col2, col3 = st.columns(3)
+            col1.plotly_chart(render_gauge(stats['prob_loss'], "Prob. Pérdida", 1.0,
+                              config.get('thresholds.critical_loss_prob', 0.25)), use_container_width=True)
+            col2.plotly_chart(render_gauge(abs(stats['var_95']), "VaR 95%",
+                              abs(stats['var_95']) * 2, abs(stats['var_95']) * 0.8), use_container_width=True)
+            col3.plotly_chart(render_gauge(stats['p50'], "P50",
+                              stats['p90'], stats['mean'] * 0.5), use_container_width=True)
+
+        if isinstance(narrative, dict) and narrative.get('executive_summary'):
+            st.markdown("---")
+            st.subheader("Traducción Ejecutiva")
+            st.info(narrative.get('confidence_level', ''))
+            st.markdown(narrative.get('executive_summary', ''))
+
+        if not sensitivity.empty:
+            st.markdown("---")
+            st.plotly_chart(render_tornado_chart(sensitivity), use_container_width=True)
+
+        if results_df is not None and not (isinstance(results_df, pd.DataFrame) and results_df.empty):
+            st.markdown("---")
+            st.plotly_chart(render_distribution_chart(results_df, stats), use_container_width=True)
+
+        if recs:
+            st.markdown("---")
+            st.subheader("Inteligencia de Decisiones")
+            for i, rec in enumerate(recs, 1):
+                with st.expander(f"#{i} {rec['title']} (Prioridad {rec['priority']})", expanded=(rec['priority'] == 1)):
+                    st.markdown(f"**Descripción:** {rec['description']}")
+                    for act in rec.get('actions', []):
+                        st.write(f"- Paso {act['step']}: {act['action']} *(Responsable: {act['responsible']})*")
+
+    # ── TAB 6: REPORTES ──────────────────────────────────────────────────────
+    with tab_reportes:
+        render_export_section(pipeline_results, client_name, "Consultor")
+
+
+def vista_ejecutivo_v2(pipeline_results: dict, config):
+    """Vista ejecutiva simplificada: semáforo + alertas clave + exportar PDF."""
+    client_name = config.get('client.name', 'Cliente')
+    stats  = pipeline_results.get('statistics', {})
+    stress = pipeline_results.get('stress_results', {})
+    prob   = stress.get('probabilidad_crisis', 0)
+    mes_c  = stress.get('mes_critico')
+
+    st.markdown(f"<h2 style='color:#1f77b4;'>📊 Dashboard Ejecutivo — {client_name}</h2>",
+                unsafe_allow_html=True)
+
+    # Estado general
+    if prob > 0.30:
+        st.error(f"🔴 **ALERTA:** Crisis proyectada con {prob:.0%} de probabilidad en mes {mes_c}. Contacte a su consultor.")
+    elif prob > 0.15:
+        st.warning(f"🟡 **PRECAUCIÓN:** Señales de riesgo moderado ({prob:.0%}). Revisar con su equipo.")
+    else:
+        st.success("🟢 **TODO EN ORDEN:** No se detectan crisis en el horizonte de 12 meses.")
+
+    # KPIs
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Resultado Esperado",  f"${stats.get('p50', 0):,.0f}", "Mediana (P50)")
+    col2.metric("Escenario Optimista", f"${stats.get('p90', 0):,.0f}", "P90")
+    col3.metric("Escenario Pesimista", f"${stats.get('p10', 0):,.0f}", "P10", delta_color="inverse")
+    col4.metric("Riesgo de Pérdida",   f"{stats.get('prob_loss', 0):.1%}", delta_color="inverse")
+
+    # Semáforo (solo primeros 6 meses para ejecutivo)
+    semaforo = stress.get('semaforo', {})
+    if semaforo:
+        st.markdown("---")
+        st.subheader("🚦 Semáforo — Próximos 6 Meses")
+        cols = st.columns(6)
+        for mes in range(1, 7):
+            s = semaforo.get(mes, {})
+            with cols[mes - 1]:
+                st.metric(f"Mes {mes}", s.get('emoji', '🟢'), s.get('estado', 'OK'))
+
+    # Distribución
+    results_df = pipeline_results.get('simulation_results')
+    if results_df is not None and stats:
+        st.markdown("---")
+        st.plotly_chart(render_distribution_chart(results_df, stats), use_container_width=True)
+
+    # Exportar PDF (solo PDF para ejecutivo)
+    st.markdown("---")
+    render_export_section(pipeline_results, client_name, "Ejecutivo")
+
+
+# ═══════════════════════════════════════════════════════════════
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 
@@ -335,10 +660,10 @@ def main():
             selected_client_file = f"{client_id}_config.yaml"
             
         st.markdown("---")
-        st.markdown("**⚙️ Configuración:**")
-        st.caption("• Pipeline: 4 Fases")
-        st.caption("• Simulaciones: 10,000")
-        st.caption("• Motor: Decision Intelligence")
+        st.markdown("**⚙️ Sentinel V2 — 3 Escudos:**")
+        st.caption("🎯 Escudo 1: Proyecciones (Prophet)")
+        st.caption("⚡ Escudo 2: Estrés (SimPy + PyMC)")
+        st.caption("🔬 Escudo 3: Rescate (CVXPY)")
         st.markdown("---")
         st.caption("© 2026 Evangelista & Co.")
 
@@ -372,9 +697,9 @@ def main():
             triggers = []
             
         if st.session_state.role == "Ejecutivo":
-            vista_ejecutivo(stats, triggers, results, config)
-        elif st.session_state.role == "Consultor":
-            vista_consultor(stats, triggers, sensitivity, results, config, business_narrative, recommendations)
+            vista_ejecutivo_v2(pipeline_results, config)
+        elif st.session_state.role in ["Consultor", "Admin"]:
+            vista_consultor_v2(pipeline_results, config)
         else:
             st.error("❌ Rol no reconocido")
             
