@@ -7,6 +7,8 @@ from src.business_translator import BusinessTranslator
 from src.decision_intelligence_engine import DecisionIntelligenceEngine
 from src.forecasting_engine import ForecastingEngine
 from src.stress_testing_engine import StressTestingEngine
+from src.optimization_engine import OptimizationEngine
+from src.data_validator import DataValidator, DataQualityError
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,22 @@ class DecisionPipeline:
         except Exception as e:
             print(f"❌ FASE {phase_number} falló: {str(e)}")
             raise PipelineExecutionError(f"Pipeline detenido en Fase {phase_number}: {e}")
+
+    def run_optimization(self, stress_results: dict,
+                         forecasting_results: dict) -> dict:
+        """
+        FASE 0c: Escudo 3 - Bisturí (Optimization Engine).
+        Prescribe estrategias óptimas si hay crisis proyectada.
+        """
+        try:
+            engine = OptimizationEngine(
+                stress_results=stress_results,
+                forecasting_results=forecasting_results,
+            )
+            return engine.generate_rescue_plan()
+        except Exception as e:
+            logger.warning(f"OptimizationEngine falló (continuando): {e}")
+            return {"error": str(e), "crisis_detectada": False, "estrategias": []}
 
     def run_stress_testing(self, forecasting_results: dict,
                            n_scenarios: int = 10_000) -> dict:
@@ -95,6 +113,12 @@ class DecisionPipeline:
             lambda: self.run_stress_testing(forecasting_results)
         )
 
+        # FASE 0c: Escudo 3 - Optimization (nueva)
+        optimization_results = self.run_phase(
+            0, "Escudo 3 - Optimization Engine (Bisturí)",
+            lambda: self.run_optimization(stress_results, forecasting_results)
+        )
+
         # FASE 1: Extracción (mantenida por compatibilidad)
         extracted_data = {}
         self.pipeline_state['phase_1_completed'] = True
@@ -123,6 +147,7 @@ class DecisionPipeline:
             'raw_data': extracted_data,
             'forecasting_results': forecasting_results,       # Escudo 1
             'stress_results': stress_results,                 # Escudo 2
+            'optimization_results': optimization_results,     # Escudo 3
             'simulation_results': mc_results['results'],
             'statistics': mc_results['statistics'],
             'sensitivity': mc_results['sensitivity'],

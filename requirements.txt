@@ -21,3 +21,8 @@ statsmodels>=0.13.0
 riskfolio-lib>=6.0.0
 pymc>=5.0.0
 simpy>=4.0.0
+
+# ── Escudo 3: Optimization Engine ────────────────────────────────────────────
+cvxpy>=1.4.0
+great-expectations>=0.18.0
+numpy>=2.0.0
