@@ -1,198 +1,118 @@
 import os
 import bcrypt
+import yaml
+from datetime import datetime
 import streamlit as st
-from supabase import create_client
-from datetime import datetime, timedelta
-import uuid
+from supabase import create_client, Client
+from dataclasses import dataclass
+from typing import Optional
 
+# ==============================================================================
+# ENTIDAD DE DATOS ESTRUCTURADA
+# ==============================================================================
+@dataclass
+class User:
+    id: str
+    username: str
+    nombre_completo: str
+    email: str
+    role: str
+    client_id: Optional[str] = None
+
+# ==============================================================================
+# MOTOR DE AUTENTICACIÓN (TOLERANCIA A FALLOS)
+# ==============================================================================
 class UserManager:
-    """
-    Gestiona autenticación y usuarios en Supabase.
-    NO usa SQLAlchemy ni archivos YAML.
-    """
-    
-    def __init__(self):
-        """Inicializa conexión a Supabase."""
-        # Obtener credenciales
-        try:
-            self.supabase_url = st.secrets.get("SUPABASE_URL")
-            self.supabase_key = st.secrets.get("SUPABASE_KEY")
-        except:
-            self.supabase_url = os.getenv("SUPABASE_URL")
-            self.supabase_key = os.getenv("SUPABASE_KEY")
+    def __init__(self, config_path: str = 'configs/users.yaml'):
+        self.config_path = config_path
+        self.supabase = self._init_supabase()
+
+    def _init_supabase(self) -> Optional[Client]:
+        """Inicialización Zero-Crash del Data Mesh"""
+        def get_credential(key_name: str) -> str:
+            val = os.getenv(key_name)
+            if not val and hasattr(st, "secrets"):
+                try: val = st.secrets[key_name]
+                except KeyError: val = None
+            return val
+
+        url = get_credential("SUPABASE_URL")
+        key = get_credential("SUPABASE_KEY")
         
-        if not self.supabase_url or not self.supabase_key:
-            raise ValueError("❌ Faltan SUPABASE_URL o SUPABASE_KEY en secrets.toml")
-        
-        # Crear cliente de Supabase
-        self.supabase = create_client(self.supabase_url, self.supabase_key)
-    
-    def authenticate(self, username: str, password: str) -> dict:
-        """
-        Autentica un usuario.
-        
-        Returns:
-            dict con datos del usuario si éxito, None si falla
-        """
-        try:
-            # Buscar usuario en Supabase
-            response = self.supabase.table('saas_users').select('*').eq('username', username).execute()
-            
-            if not response.data or len(response.data) == 0:
+        if url and key:
+            try: 
+                return create_client(url, key)
+            except Exception: 
                 return None
-            
-            user = response.data[0]
-            
-            # Verificar si está bloqueado
-            if user.get('locked_until'):
-                locked_until = datetime.fromisoformat(user['locked_until'].replace('Z', '+00:00'))
-                if datetime.now(locked_until.tzinfo) < locked_until:
-                    return None
-            
-            # Verificar si está activo
-            if not user.get('is_active', True):
-                return None
-            
-            # Verificar password
-            password_hash = user['password_hash']
-            if bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
-                # Login exitoso - resetear intentos fallidos
-                self.supabase.table('saas_users').update({
-                    'failed_attempts': 0,
-                    'last_login': datetime.now().isoformat()
-                }).eq('id', user['id']).execute()
-                
-                return user
-            else:
-                # Login fallido - incrementar intentos
-                failed_attempts = user.get('failed_attempts', 0) + 1
-                update_data = {'failed_attempts': failed_attempts}
-                
-                # Bloquear si excede 5 intentos
-                if failed_attempts >= 5:
-                    update_data['locked_until'] = (datetime.now() + timedelta(minutes=15)).isoformat()
-                
-                self.supabase.table('saas_users').update(update_data).eq('id', user['id']).execute()
-                
-                return None
-        
-        except Exception as e:
-            print(f"❌ Error en authenticate: {e}")
-            return None
-    
-    def create_user(self, username: str, password: str, role: str = 'consultor', 
-                   nombre_completo: str = None, email: str = None, client_id: str = None) -> bool:
+        return None
+
+    def authenticate(self, username: str, password: str, ip: str = "0.0.0.0") -> Optional[User]:
         """
-        Crea un nuevo usuario en Supabase.
-        
-        Args:
-            username: Nombre de usuario único
-            password: Contraseña en texto plano (se hasheará)
-            role: Rol (admin, consultor, cliente)
-            nombre_completo: Nombre completo opcional
-            email: Email opcional
-            client_id: UUID del cliente (si role=cliente)
-        
-        Returns:
-            True si éxito, False si falla
+        Sistema de validación de doble red.
+        Primero intenta la bóveda en la Nube. Si falla, cae al archivo local.
         """
+        # =========================================================
+        # INTENTO 1: Data Mesh (Supabase)
+        # =========================================================
+        if self.supabase:
+            try:
+                # Intenta buscar en las dos nomenclaturas de tabla más comunes
+                try:
+                    res = self.supabase.table("saas_usuarios").select("*").eq("username", username).execute()
+                except Exception:
+                    res = self.supabase.table("users").select("*").eq("username", username).execute()
+                    
+                if res.data:
+                    user_data = res.data[0]
+                    stored_hash = user_data.get("password_hash", "")
+                    
+                    # 🔴 FIX CRÍTICO: Prevención de TypeError criptográfico
+                    # Bcrypt exige BYTES absolutos. Forzamos la conversión.
+                    password_bytes = password.encode('utf-8')
+                    hash_bytes = stored_hash.encode('utf-8') if isinstance(stored_hash, str) else stored_hash
+                    
+                    if bcrypt.checkpw(password_bytes, hash_bytes):
+                        return User(
+                            id=str(user_data.get("id", username)),
+                            username=user_data.get("username", username),
+                            nombre_completo=user_data.get("nombre_completo", username),
+                            email=user_data.get("email", ""),
+                            role=user_data.get("role", "Consultor"),
+                            client_id=str(user_data.get("cliente_id")) if user_data.get("cliente_id") else None
+                        )
+                    return None # Contraseña incorrecta, abortar.
+            except Exception as e:
+                # Falla silenciosa para que la red de seguridad local pueda actuar
+                print(f"Bypass de Supabase. Razon: {e}")
+
+        # =========================================================
+        # INTENTO 2: Red de Seguridad (YAML Local)
+        # =========================================================
         try:
-            # Hash password con bcrypt
-            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            
-            # Crear usuario
-            user_data = {
-                'id': str(uuid.uuid4()),
-                'username': username,
-                'password_hash': password_hash,
-                'role': role,
-                'nombre_completo': nombre_completo,
-                'email': email,
-                'client_id': client_id,
-                'is_active': True,
-                'failed_attempts': 0,
-                'created_at': datetime.now().isoformat()
-            }
-            
-            self.supabase.table('saas_users').insert(user_data).execute()
-            return True
-        
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r') as f:
+                    data = yaml.safe_load(f) or {}
+                    
+                users_dict = data.get('users', {})
+                if username in users_dict:
+                    user_data = users_dict[username]
+                    stored_hash = user_data.get("password_hash", "")
+                    
+                    # 🔴 FIX CRÍTICO REPLICADO EN LOCAL
+                    password_bytes = password.encode('utf-8')
+                    hash_bytes = stored_hash.encode('utf-8') if isinstance(stored_hash, str) else stored_hash
+                    
+                    if bcrypt.checkpw(password_bytes, hash_bytes):
+                        return User(
+                            id=username,
+                            username=username,
+                            nombre_completo=user_data.get("nombre_completo", username),
+                            email=user_data.get("email", ""),
+                            role=user_data.get("role", "Consultor"),
+                            client_id=user_data.get("client_id")
+                        )
         except Exception as e:
-            print(f"❌ Error creando usuario: {e}")
-            return False
-    
-    def get_user(self, username: str) -> dict:
-        """Obtiene datos de un usuario por username."""
-        try:
-            response = self.supabase.table('saas_users').select('*').eq('username', username).execute()
-            if response.data and len(response.data) > 0:
-                return response.data[0]
-            return None
-        except Exception as e:
-            print(f"❌ Error obteniendo usuario: {e}")
-            return None
-    
-    def list_users(self) -> list:
-        """Lista todos los usuarios."""
-        try:
-            response = self.supabase.table('saas_users').select('*').order('created_at', desc=True).execute()
-            return response.data if response.data else []
-        except Exception as e:
-            print(f"❌ Error listando usuarios: {e}")
-            return []
-    
-    def update_user(self, user_id: str, **kwargs) -> bool:
-        """
-        Actualiza datos de un usuario.
-        
-        Args:
-            user_id: UUID del usuario
-            **kwargs: Campos a actualizar (role, nombre_completo, email, is_active, etc.)
-        """
-        try:
-            # Si se actualiza password, hashear
-            if 'password' in kwargs:
-                kwargs['password_hash'] = bcrypt.hashpw(
-                    kwargs.pop('password').encode('utf-8'), 
-                    bcrypt.gensalt()
-                ).decode('utf-8')
-            
-            self.supabase.table('saas_users').update(kwargs).eq('id', user_id).execute()
-            return True
-        except Exception as e:
-            print(f"❌ Error actualizando usuario: {e}")
-            return False
-    
-    def delete_user(self, user_id: str) -> bool:
-        """Elimina un usuario (soft delete - marca como inactivo)."""
-        try:
-            self.supabase.table('saas_users').update({'is_active': False}).eq('id', user_id).execute()
-            return True
-        except Exception as e:
-            print(f"❌ Error eliminando usuario: {e}")
-            return False
-    
-    def change_password(self, username: str, old_password: str, new_password: str) -> bool:
-        """Cambia la contraseña de un usuario."""
-        try:
-            # Verificar password actual
-            if not self.authenticate(username, old_password):
-                return False
-            
-            # Obtener usuario
-            user = self.get_user(username)
-            if not user:
-                return False
-            
-            # Hash nuevo password
-            new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            
-            # Actualizar en Supabase
-            self.supabase.table('saas_users').update({
-                'password_hash': new_hash
-            }).eq('id', user['id']).execute()
-            
-            return True
-        except Exception as e:
-            print(f"❌ Error cambiando password: {e}")
-            return False
+            st.error(f"Error de sistema en validación local: {e}")
+
+        # Si ambas redes fallan, el acceso se deniega
+        return None
