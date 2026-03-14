@@ -46,32 +46,49 @@ class UserManager:
                 return None
         return None
 
-    def authenticate(self, username: str, password: str, ip: str = "0.0.0.0") -> Optional[User]:
+    def authenticate(self, username: str, password: str, **kwargs) -> Optional[User]:
         """
-        Sistema de validación de doble red.
-        Primero intenta la bóveda en la Nube. Si falla, cae al archivo local.
+        Sistema de validación de doble red con blindaje polimórfico (**kwargs).
+        Absorbe cualquier parámetro legacy (como 'ip') sin colapsar.
         """
+        ip = kwargs.get("ip", "0.0.0.0") # El sistema lo absorbe pero no explota si no existe
+        
         # =========================================================
         # INTENTO 1: Data Mesh (Supabase)
         # =========================================================
         if self.supabase:
             try:
-                # Intenta buscar en las dos nomenclaturas de tabla más comunes
+                user_data = None
+                
+                # Intentamos buscar en la tabla 'saas_consultores' primero (si el email se usa como username)
                 try:
-                    res = self.supabase.table("saas_usuarios").select("*").eq("username", username).execute()
+                    res = self.supabase.table("saas_consultores").select("*").eq("email", username).execute()
+                    if res.data:
+                        # OJO: La tabla saas_consultores actual no tiene password_hash. 
+                        # Si entra aquí, forzamos el fallback local para validar la contraseña,
+                        # o asumimos que es un usuario sin acceso via web directa aún.
+                        pass 
                 except Exception:
-                    res = self.supabase.table("users").select("*").eq("username", username).execute()
-                    
-                if res.data:
-                    user_data = res.data[0]
+                    pass
+
+                # Intentamos la tabla confirmada de usuarios
+                if not user_data:
+                    try:
+                        res = self.supabase.table("saas_users").select("*").eq("username", username).execute()
+                        if res.data: user_data = res.data[0]
+                    except Exception as e:
+                        # Falla silenciosa si la tabla no existe o hay RLS
+                        print(f"Intento en saas_users fallido: {e}")
+
+                if user_data:
                     stored_hash = user_data.get("password_hash", "")
                     
                     # 🔴 FIX CRÍTICO: Prevención de TypeError criptográfico
-                    # Bcrypt exige BYTES absolutos. Forzamos la conversión.
                     password_bytes = password.encode('utf-8')
                     hash_bytes = stored_hash.encode('utf-8') if isinstance(stored_hash, str) else stored_hash
                     
-                    if bcrypt.checkpw(password_bytes, hash_bytes):
+                    # Si el hash en BD está vacío, fallamos para usar el local
+                    if hash_bytes and bcrypt.checkpw(password_bytes, hash_bytes):
                         return User(
                             id=str(user_data.get("id", username)),
                             username=user_data.get("username", username),
@@ -80,9 +97,8 @@ class UserManager:
                             role=user_data.get("role", "Consultor"),
                             client_id=str(user_data.get("cliente_id")) if user_data.get("cliente_id") else None
                         )
-                    return None # Contraseña incorrecta, abortar.
             except Exception as e:
-                # Falla silenciosa para que la red de seguridad local pueda actuar
+                # Falla silenciosa total para que la red de seguridad local pueda actuar
                 print(f"Bypass de Supabase. Razon: {e}")
 
         # =========================================================
