@@ -1,223 +1,235 @@
 """
-Script de carga: BANXICO → saas_variables_exogenas
-Evangelista & Co. | Sentinel Decision Intelligence V2
-
-Descarga datos macroeconómicos de la API de BANXICO (SIE) y los inserta
-en la tabla global saas_variables_exogenas de Supabase.
-
-PREREQUISITOS:
-1. Registrarte en https://www.banxico.org.mx/SieAPIRest/ y obtener tu token.
-2. Añadir en .streamlit/secrets.toml:
-       BANXICO_TOKEN = "tu_token_aqui"
-3. Aplicar migración: supabase/migrations/002_create_variables_exogenas.sql
-4. Ejecutar desde la raíz del proyecto:
-       python scripts/load_banxico_data.py [--meses 24]
-
-SERIES DISPONIBLES (BANXICO SIE):
-  SF43718  → TIIE a 28 días (%)
-  SF46410  → USD/MXN tipo de cambio FIX
-  SP30577  → INPC (Índice Nacional de Precios al Consumidor)
-  SF43936  → CETES 28 días (%)
+Script de carga de datos BANXICO - VERSIÓN CORREGIDA
+Códigos de series actualizados a 2026
 """
 
-import sys
 import os
-import argparse
-import logging
+import sys
 from datetime import datetime, timedelta
-from pathlib import Path
+import logging
 
+# Agregar path al proyecto
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import streamlit as st
+from supabase import create_client
 import requests
-import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
-logger = logging.getLogger(__name__)
-
-# ── Series a descargar ─────────────────────────────────────────────────────────
-SERIES_BANXICO = {
-    "TIIE":       {"id": "SF43718", "fuente": "BANXICO"},
-    "USD_MXN":    {"id": "SF46410", "fuente": "BANXICO"},
-    "INPC":       {"id": "SP30577", "fuente": "BANXICO"},
-    "CETES_28":   {"id": "SF43936", "fuente": "BANXICO"},
-}
-
-BANXICO_BASE_URL = (
-    "https://www.banxico.org.mx/SieAPIRest/service/v1/series/{serie}/datos/{inicio}/{fin}"
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# ============================================================
+# CONFIGURACIÓN DE SERIES BANXICO (CÓDIGOS CORRECTOS 2026)
+# ============================================================
 
-# ── Leer secrets ───────────────────────────────────────────────────────────────
+SERIES_BANXICO = {
+    'TIIE': {
+        'codigo': 'SF43878',  # TIIE 28 días (CORREGIDO)
+        'nombre': 'TIIE 28 días',
+        'descripcion': 'Tasa de Interés Interbancaria de Equilibrio a 28 días'
+    },
+    'USD_MXN': {
+        'codigo': 'SF43718',  # Tipo de cambio FIX (CORREGIDO)
+        'nombre': 'Tipo de Cambio FIX',
+        'descripcion': 'Tipo de cambio para solventar obligaciones en dólares'
+    },
+    'CETES_28': {
+        'codigo': 'SF43936',  # CETES 28 días
+        'nombre': 'CETES 28 días',
+        'descripcion': 'Tasa de rendimiento de CETES a 28 días'
+    },
+    'INPC': {
+        'codigo': 'SP1',  # INPC General (CORREGIDO - serie más simple)
+        'nombre': 'INPC General',
+        'descripcion': 'Índice Nacional de Precios al Consumidor'
+    }
+}
 
-def _load_secrets() -> dict:
+# URL base de la API de BANXICO
+BANXICO_API_BASE = "https://www.banxico.org.mx/SieAPIRest/service/v1/series"
+
+def get_banxico_token():
+    """Obtiene token de BANXICO desde secrets."""
     try:
-        import tomllib
-        with open(ROOT / ".streamlit" / "secrets.toml", "rb") as f:
-            return tomllib.load(f)
-    except ImportError:
-        secrets = {}
-        with open(ROOT / ".streamlit" / "secrets.toml") as f:
-            for line in f:
-                line = line.strip()
-                if "=" in line and not line.startswith("#"):
-                    k, _, v = line.partition("=")
-                    secrets[k.strip()] = v.strip().strip('"')
-        return secrets
+        return st.secrets.get("BANXICO_TOKEN")
+    except:
+        return os.getenv("BANXICO_TOKEN")
 
+def get_supabase_client():
+    """Crea cliente de Supabase."""
+    try:
+        url = st.secrets.get("SUPABASE_URL")
+        key = st.secrets.get("SUPABASE_KEY")
+    except:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+    
+    if not url or not key:
+        raise ValueError("Faltan SUPABASE_URL o SUPABASE_KEY en secrets.toml")
+    
+    return create_client(url, key)
 
-# ── Descarga de BANXICO ────────────────────────────────────────────────────────
-
-def fetch_banxico_serie(serie_id: str, token: str,
-                         fecha_inicio: str, fecha_fin: str) -> list[dict]:
+def fetch_banxico_data(serie_codigo: str, fecha_inicio: str, fecha_fin: str, token: str):
     """
-    Descarga datos de una serie de BANXICO SIE.
+    Descarga datos de BANXICO.
+    
+    API Endpoint:
+    https://www.banxico.org.mx/SieAPIRest/service/v1/series/{serie}/datos/{fecha_inicio}/{fecha_fin}
+    
+    Formato fecha: YYYY-MM-DD
+    """
+    url = f"{BANXICO_API_BASE}/{serie_codigo}/datos/{fecha_inicio}/{fecha_fin}"
+    
+    headers = {
+        'Bmx-Token': token,
+        'Accept': 'application/json'
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Extraer serie de datos
+            series = data.get('bmx', {}).get('series', [])
+            if not series:
+                return None
+            
+            # Primera serie (debería ser la única)
+            serie_data = series[0].get('datos', [])
+            
+            return serie_data
+        
+        elif response.status_code == 404:
+            logging.warning(f"   ⚠️  Serie {serie_codigo}: No encontrada (404)")
+            return None
+        
+        elif response.status_code == 401:
+            logging.error(f"   ❌ Serie {serie_codigo}: Token inválido (401)")
+            return None
+        
+        else:
+            logging.error(f"   ❌ Serie {serie_codigo}: HTTP {response.status_code}")
+            return None
+    
+    except requests.exceptions.Timeout:
+        logging.error(f"   ❌ Serie {serie_codigo}: Timeout")
+        return None
+    
+    except Exception as e:
+        logging.error(f"   ❌ Serie {serie_codigo}: Error {str(e)}")
+        return None
 
+def insert_to_supabase(supabase, variable: str, datos: list, fuente: str = "BANXICO"):
+    """
+    Inserta datos en Supabase.
+    
     Args:
-        serie_id:     ID de la serie (ej: 'SF43718')
-        token:        Token de acceso BANXICO
-        fecha_inicio: Formato 'YYYY-MM-DD'
-        fecha_fin:    Formato 'YYYY-MM-DD'
-
-    Returns:
-        Lista de dicts con claves: fecha, dato
+        supabase: Cliente de Supabase
+        variable: Nombre de la variable (ej: 'TIIE', 'USD_MXN')
+        datos: Lista de dicts con formato BANXICO: [{'fecha': 'DD/MM/YYYY', 'dato': 'X.XX'}]
+        fuente: Fuente de datos (default: 'BANXICO')
     """
-    url = BANXICO_BASE_URL.format(
-        serie=serie_id,
-        inicio=fecha_inicio.replace("-", "/"),
-        fin=fecha_fin.replace("-", "/"),
-    )
-    headers = {"Bmx-Token": token}
-
-    resp = requests.get(url, headers=headers, timeout=30)
-
-    if resp.status_code == 401:
-        raise ValueError("Token BANXICO inválido o expirado. Verifica BANXICO_TOKEN en secrets.toml")
-
-    if resp.status_code != 200:
-        raise RuntimeError(f"BANXICO API error {resp.status_code}: {resp.text[:200]}")
-
-    data = resp.json()
-    series_data = data.get("bmx", {}).get("series", [])
-    if not series_data:
-        return []
-
-    registros = series_data[0].get("datos", [])
-    return registros  # [{"fecha": "06/01/2024", "dato": "11.00"}, ...]
-
-
-def parse_banxico_registros(registros: list, variable: str,
-                              serie_info: dict) -> pd.DataFrame:
-    """Convierte la respuesta de BANXICO a un DataFrame normalizado."""
-    rows = []
-    for r in registros:
-        raw_fecha = r.get("fecha", "")
-        raw_valor = r.get("dato", "").replace(",", "")
-
-        if not raw_valor or raw_valor in ("N/E", "N/D", ""):
-            continue
-
+    registros_insertados = 0
+    
+    for punto in datos:
         try:
-            # BANXICO devuelve fechas en formato dd/mm/yyyy
-            fecha = datetime.strptime(raw_fecha, "%d/%m/%Y").date()
-            valor = float(raw_valor)
-        except (ValueError, TypeError):
-            continue
-
-        rows.append({
-            "variable":  variable,
-            "fecha":     fecha,
-            "valor":     valor,
-            "fuente":    serie_info["fuente"],
-            "serie_id":  serie_info["id"],
-        })
-
-    return pd.DataFrame(rows)
-
-
-# ── Inserción en Supabase ──────────────────────────────────────────────────────
-
-def insert_to_supabase(df: pd.DataFrame, engine) -> int:
-    """Inserta filas en saas_variables_exogenas (ignora duplicados)."""
-    from sqlalchemy import text
-
-    if df.empty:
-        return 0
-
-    inserted = 0
-    with engine.begin() as conn:
-        for _, row in df.iterrows():
+            # Parsear fecha (formato BANXICO: DD/MM/YYYY)
+            fecha_str = punto.get('fecha')
+            valor_str = punto.get('dato')
+            
+            if not fecha_str or not valor_str:
+                continue
+            
+            # Convertir fecha DD/MM/YYYY → YYYY-MM-DD
+            dia, mes, anio = fecha_str.split('/')
+            fecha_iso = f"{anio}-{mes}-{dia}"
+            
+            # Convertir valor (puede venir como string)
             try:
-                conn.execute(
-                    text("""
-                        INSERT INTO saas_variables_exogenas
-                            (variable, fecha, valor, fuente, serie_id)
-                        VALUES
-                            (:variable, :fecha, :valor, :fuente, :serie_id)
-                        ON CONFLICT (variable, fecha) DO NOTHING
-                    """),
-                    {
-                        "variable": row["variable"],
-                        "fecha":    str(row["fecha"]),
-                        "valor":    float(row["valor"]),
-                        "fuente":   row.get("fuente"),
-                        "serie_id": row.get("serie_id"),
-                    }
-                )
-                inserted += 1
-            except Exception as e:
-                logger.warning(f"Fila omitida ({row['variable']} {row['fecha']}): {e}")
-
-    return inserted
-
-
-# ── Main ───────────────────────────────────────────────────────────────────────
-
-def run(meses: int = 24):
-    secrets = _load_secrets()
-    token = secrets.get("BANXICO_TOKEN") or os.environ.get("BANXICO_TOKEN", "")
-
-    if not token:
-        logger.error(
-            "❌ No se encontró BANXICO_TOKEN.\n"
-            "   1. Regístrate en https://www.banxico.org.mx/SieAPIRest/\n"
-            "   2. Añade BANXICO_TOKEN = 'tu_token' en .streamlit/secrets.toml"
-        )
-        sys.exit(1)
-
-    db_url = secrets.get("DATABASE_URL", "")
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-    from sqlalchemy import create_engine
-    engine = create_engine(db_url, pool_pre_ping=True)
-    logger.info("✅ Conectado a Supabase")
-
-    fecha_fin   = datetime.now().strftime("%Y-%m-%d")
-    fecha_ini   = (datetime.now() - timedelta(days=meses * 31)).strftime("%Y-%m-%d")
-    logger.info(f"Descargando {meses} meses: {fecha_ini} → {fecha_fin}")
-
-    total_insertados = 0
-
-    for variable, info in SERIES_BANXICO.items():
-        logger.info(f"  📡 Descargando {variable} (serie {info['id']})...")
-        try:
-            registros = fetch_banxico_serie(info["id"], token, fecha_ini, fecha_fin)
-            df = parse_banxico_registros(registros, variable, info)
-            n = insert_to_supabase(df, engine)
-            total_insertados += n
-            logger.info(f"     ✅ {len(df)} registros descargados, {n} insertados")
+                valor = float(valor_str.replace(',', ''))
+            except:
+                continue
+            
+            # Insertar en Supabase (upsert para evitar duplicados)
+            supabase.table('saas_variables_exogenas').upsert({
+                'variable': variable,
+                'fecha': fecha_iso,
+                'valor': valor,
+                'fuente': fuente
+            }, on_conflict='variable,fecha').execute()
+            
+            registros_insertados += 1
+        
         except Exception as e:
-            logger.warning(f"     ⚠️  {variable}: {e}")
+            logging.debug(f"      Error en registro: {e}")
+            continue
+    
+    return registros_insertados
 
-    logger.info(f"\n{'='*50}")
-    logger.info(f"Carga completada: {total_insertados} registros nuevos en saas_variables_exogenas")
-
+def main():
+    """Pipeline principal de carga."""
+    
+    # 1. Obtener credenciales
+    token = get_banxico_token()
+    if not token:
+        logging.error("❌ BANXICO_TOKEN no encontrado en secrets.toml")
+        sys.exit(1)
+    
+    # 2. Conectar a Supabase
+    try:
+        supabase = get_supabase_client()
+        logging.info("✅ Conectado a Supabase")
+    except Exception as e:
+        logging.error(f"❌ Error conectando a Supabase: {e}")
+        sys.exit(1)
+    
+    # 3. Definir rango de fechas (últimos 24 meses)
+    fecha_fin = datetime.now()
+    fecha_inicio = fecha_fin - timedelta(days=730)  # ~24 meses
+    
+    fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+    fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+    
+    logging.info(f"Descargando 24 meses: {fecha_inicio_str} → {fecha_fin_str}")
+    
+    # 4. Descargar cada serie
+    total_registros = 0
+    
+    for variable, config in SERIES_BANXICO.items():
+        logging.info(f"  📡 Descargando {variable} (serie {config['codigo']})...")
+        
+        datos = fetch_banxico_data(
+            serie_codigo=config['codigo'],
+            fecha_inicio=fecha_inicio_str,
+            fecha_fin=fecha_fin_str,
+            token=token
+        )
+        
+        if datos:
+            registros = insert_to_supabase(supabase, variable, datos)
+            logging.info(f"     ✅ {variable}: {registros} registros insertados")
+            total_registros += registros
+        else:
+            logging.warning(f"     ⚠️  {variable}: Sin datos (verificar código de serie)")
+    
+    # 5. Resumen
+    logging.info("")
+    logging.info("=" * 50)
+    logging.info(f"Carga completada: {total_registros} registros nuevos en saas_variables_exogenas")
+    
+    if total_registros == 0:
+        logging.warning("\n⚠️  ADVERTENCIA: No se insertaron registros.")
+        logging.warning("Posibles causas:")
+        logging.warning("1. Token BANXICO inválido o expirado")
+        logging.warning("2. Códigos de series incorrectos")
+        logging.warning("3. API de BANXICO temporalmente no disponible")
+        logging.info("\n💡 Ejecuta: python scripts/load_mock_data.py (para usar datos de prueba)")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Carga datos de BANXICO en Supabase")
-    parser.add_argument("--meses", type=int, default=24,
-                        help="Meses históricos a descargar (default: 24)")
-    args = parser.parse_args()
-    run(meses=args.meses)
+    main()
