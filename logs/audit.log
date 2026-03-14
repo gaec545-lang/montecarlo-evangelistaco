@@ -1,0 +1,6 @@
+[2026-03-13 22:00:50] LOGIN_FAILED | user=adriel | reason=invalid_password | ip=test
+[2026-03-13 22:00:51] LOGIN_FAILED | user=adriel | reason=invalid_password | ip=test
+[2026-03-13 22:00:51] LOGIN_FAILED | user=adriel | reason=invalid_password | ip=test
+[2026-03-13 22:00:52] LOGIN_FAILED | user=adriel | reason=invalid_password | ip=test
+[2026-03-13 22:00:52] ACCOUNT_LOCKED | user=adriel | reason=max_attempts
+[2026-03-13 22:00:52] LOGIN_FAILED | user=adriel | reason=max_attempts_reached | ip=test
