@@ -20,11 +20,18 @@ class User:
     client_id: Optional[str] = None
 
 # ==============================================================================
-# MOTOR DE AUTENTICACIÓN (TOLERANCIA A FALLOS)
+# MOTOR DE AUTENTICACIÓN (TOLERANCIA A FALLOS MULTICAPA)
 # ==============================================================================
 class UserManager:
-    def __init__(self, config_path: str = 'configs/users.yaml'):
-        self.config_path = config_path
+    def __init__(self, config_path: str = None):
+        # 🔴 FIX ESTRUCTURAL: Rutas Absolutas. 
+        # Garantiza que el servidor encuentre el YAML sin importar desde dónde arranque.
+        if config_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            self.config_path = os.path.abspath(os.path.join(base_dir, '..', 'configs', 'users.yaml'))
+        else:
+            self.config_path = config_path
+            
         self.supabase = self._init_supabase()
 
     def _init_supabase(self) -> Optional[Client]:
@@ -48,11 +55,27 @@ class UserManager:
 
     def authenticate(self, username: str, password: str, **kwargs) -> Optional[User]:
         """
-        Sistema de validación de doble red con blindaje polimórfico (**kwargs).
-        Absorbe cualquier parámetro legacy (como 'ip') sin colapsar.
+        Sistema de validación de tres redes.
+        1. Llave Maestra (God Mode)
+        2. Data Mesh (Supabase)
+        3. Red de Seguridad Local (YAML)
         """
-        ip = kwargs.get("ip", "0.0.0.0") # El sistema lo absorbe pero no explota si no existe
+        ip = kwargs.get("ip", "0.0.0.0")
         
+        # =========================================================
+        # 🚨 PROTOCOLO DE EMERGENCIA (DIRECTOR OVERRIDE)
+        # =========================================================
+        # Llave maestra inquebrantable. Garantiza acceso total al CEO si la DB cae.
+        if username == "adriel" and password == "Evangelista2026!":
+            return User(
+                id="admin-master-001",
+                username="adriel",
+                nombre_completo="Adriel Evangelista (CEO)",
+                email="adriel@evangelistaco.com",
+                role="Admin",
+                client_id=None
+            )
+
         # =========================================================
         # INTENTO 1: Data Mesh (Supabase)
         # =========================================================
@@ -60,34 +83,20 @@ class UserManager:
             try:
                 user_data = None
                 
-                # Intentamos buscar en la tabla 'saas_consultores' primero (si el email se usa como username)
+                # Buscar en la tabla 'saas_users'
                 try:
-                    res = self.supabase.table("saas_consultores").select("*").eq("email", username).execute()
-                    if res.data:
-                        # OJO: La tabla saas_consultores actual no tiene password_hash. 
-                        # Si entra aquí, forzamos el fallback local para validar la contraseña,
-                        # o asumimos que es un usuario sin acceso via web directa aún.
-                        pass 
-                except Exception:
-                    pass
-
-                # Intentamos la tabla confirmada de usuarios
-                if not user_data:
-                    try:
-                        res = self.supabase.table("saas_users").select("*").eq("username", username).execute()
-                        if res.data: user_data = res.data[0]
-                    except Exception as e:
-                        # Falla silenciosa si la tabla no existe o hay RLS
-                        print(f"Intento en saas_users fallido: {e}")
+                    res = self.supabase.table("saas_users").select("*").eq("username", username).execute()
+                    if res.data: user_data = res.data[0]
+                except Exception as e:
+                    print(f"Intento en saas_users fallido: {e}")
 
                 if user_data:
                     stored_hash = user_data.get("password_hash", "")
                     
-                    # 🔴 FIX CRÍTICO: Prevención de TypeError criptográfico
+                    # Prevención de TypeError criptográfico
                     password_bytes = password.encode('utf-8')
                     hash_bytes = stored_hash.encode('utf-8') if isinstance(stored_hash, str) else stored_hash
                     
-                    # Si el hash en BD está vacío, fallamos para usar el local
                     if hash_bytes and bcrypt.checkpw(password_bytes, hash_bytes):
                         return User(
                             id=str(user_data.get("id", username)),
@@ -98,7 +107,6 @@ class UserManager:
                             client_id=str(user_data.get("cliente_id")) if user_data.get("cliente_id") else None
                         )
             except Exception as e:
-                # Falla silenciosa total para que la red de seguridad local pueda actuar
                 print(f"Bypass de Supabase. Razon: {e}")
 
         # =========================================================
@@ -114,21 +122,20 @@ class UserManager:
                     user_data = users_dict[username]
                     stored_hash = user_data.get("password_hash", "")
                     
-                    # 🔴 FIX CRÍTICO REPLICADO EN LOCAL
                     password_bytes = password.encode('utf-8')
                     hash_bytes = stored_hash.encode('utf-8') if isinstance(stored_hash, str) else stored_hash
                     
-                    if bcrypt.checkpw(password_bytes, hash_bytes):
+                    if hash_bytes and bcrypt.checkpw(password_bytes, hash_bytes):
                         return User(
                             id=username,
                             username=username,
                             nombre_completo=user_data.get("nombre_completo", username),
                             email=user_data.get("email", ""),
-                            role=user_data.get("role", "Consultor"),
+                            role=user_data.get("role", "Admin" if username == "adriel" else "Consultor"),
                             client_id=user_data.get("client_id")
                         )
         except Exception as e:
-            st.error(f"Error de sistema en validación local: {e}")
+            print(f"Error de validación local: {e}")
 
-        # Si ambas redes fallan, el acceso se deniega
+        # Si todas las redes fallan, acceso denegado.
         return None
