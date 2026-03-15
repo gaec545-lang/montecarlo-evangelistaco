@@ -340,6 +340,39 @@ def vista_consultor_v2(pipeline_results: dict, config):
 
     # ── TAB 1: SEMÁFORO ──────────────────────────────────────────────────────
     with tab_resumen:
+        with st.expander("ℹ️ Guía de Lectura — Sistema de Alertas Predictivas", expanded=False):
+            st.markdown("""
+### 🎯 Propósito
+Vista ejecutiva unificada: consolida los outputs de los 3 Escudos en un semáforo de
+12 meses. Responde una pregunta: *¿en qué mes el negocio enfrenta riesgo crítico de
+iliquidez y qué tan probable es?*
+
+### 🔧 Metodología
+El semáforo deriva su señal del **Escudo 2 (Stress Testing)**:
+- Corre **10,000 escenarios de Montecarlo macroeconómico** con 6 variables correlacionadas
+- Para cada mes $m$, calcula la fracción de escenarios donde `caja ≤ 0`
+- Esa fracción es la `prob_crisis[m]`
+
+**Umbrales institucionales:**
+| Semáforo | Prob. de crisis | Interpretación |
+|---|---|---|
+| 🟢 Verde | < 15% | Operación saludable, sin acción urgente |
+| 🟡 Amarillo | 15% – 30% | Señales de alerta, revisar con equipo |
+| 🔴 Rojo | > 30% | Crisis proyectada, activar plan de rescate |
+
+### 📊 Cómo interpretar los KPIs
+- **P50 Monte Carlo:** Resultado más probable del negocio en el horizonte completo.
+  Si es negativo, más del 50% de los escenarios simulados terminan en pérdida.
+- **Prob. Pérdida:** Fracción de las 10,000 simulaciones con resultado neto < 0.
+- **Mes Crítico:** Primer mes donde la probabilidad de caja = $0 supera el umbral rojo.
+
+### 💡 Criterio de Acción
+```
+Prob. crisis < 15%  →  Monitoreo mensual estándar
+Prob. crisis 15-30% →  Reunión de riesgo en 72 horas
+Prob. crisis > 30%  →  Activar Escudo 3 (Bisturí) de inmediato
+```
+            """)
         stress = pipeline_results.get('stress_results', {})
         prob   = stress.get('probabilidad_crisis', 0)
         mes_c  = stress.get('mes_critico')
@@ -374,6 +407,53 @@ def vista_consultor_v2(pipeline_results: dict, config):
 
     # ── TAB 2: ESCUDO 1 ──────────────────────────────────────────────────────
     with tab_escudo1:
+        with st.expander("ℹ️ El Radar — Motor de Proyección Temporal", expanded=False):
+            st.markdown("""
+### 🎯 Propósito
+Proyecta ingresos, costos y flujo libre a **12 meses** usando series de tiempo.
+El Radar responde: *¿hacia dónde va la empresa si continúa la tendencia actual?*
+
+### 🔧 Modelos (en orden de preferencia)
+
+**Ingresos y Costos — Selección automática:**
+| Condición | Modelo seleccionado | Fortaleza |
+|---|---|---|
+| ≥ 12 meses de historia | **Facebook Prophet** | Captura tendencia + estacionalidad anual |
+| < 12 meses de historia | **Darts ExponentialSmoothing** | Suavizado triple Holt-Winters, robusto a outliers |
+| Datos insuficientes | **Darts NaiveDrift** | Proyección lineal de última tendencia |
+
+**Volatilidad de TIIE — Siempre:**
+- **ARCH GARCH(1,1):** Modelo de heterocedasticidad condicional. Captura que la
+  volatilidad de tasas se agrupa en períodos (`clustering`). Parámetros: ω, α, β
+  calibrados sobre los últimos 24 meses de datos BANXICO (serie SF43878).
+
+### 📊 Cómo interpretar los gráficos
+
+**Ingresos / Costos Proyectados:**
+- La línea es el escenario base (P50 del modelo).
+- Tendencia ascendente en costos sin correspondencia en ingresos → alerta de compresión de margen.
+
+**Flujo Libre Mensual (barras):**
+- 🟢 Verde = mes con flujo positivo (el negocio genera caja).
+- 🔴 Rojo = mes con flujo negativo (el negocio consume caja).
+- Un patrón alternado indica estacionalidad pronunciada → requiere línea de crédito revolvente.
+
+**Volatilidad TIIE:**
+- Valores > 0.5% diario indican ambiente de tasas turbulento.
+- Impacta directamente el costo de deuda variable y los flujos descontados.
+
+### 💡 Señales de Acción
+```
+Costos crecen > ingresos por 3+ meses  →  Revisión inmediata de estructura de costos
+Flujo libre negativo en temporada alta →  El problema es estructural, no estacional
+TIIE vol > 0.8%                         →  Considerar tasa fija en refinanciamiento
+```
+
+### ⚠️ Limitaciones
+- Prophet requiere **≥ 12 observaciones** con estacionalidad detectable.
+- Si la tabla `saas_variables_exogenas` está vacía, el modelo opera con datos dummy.
+  Ejecuta `scripts/load_banxico_data.py` para cargar datos reales de BANXICO.
+            """)
         forecasting = pipeline_results.get('forecasting_results', {})
         if not forecasting or 'error' in forecasting:
             st.warning("Escudo 1 no disponible." + (f" Error: {forecasting.get('error','')}" if forecasting else ""))
@@ -427,6 +507,69 @@ def vista_consultor_v2(pipeline_results: dict, config):
 
     # ── TAB 3: ESCUDO 2 ──────────────────────────────────────────────────────
     with tab_escudo2:
+        with st.expander("ℹ️ La Trituradora — Motor de Estrés Sistémico", expanded=False):
+            st.markdown("""
+### 🎯 Propósito
+Simula **10,000 escenarios de crisis macroeconómica simultánea** y mide cuántos
+terminan en quiebra de liquidez. Responde: *¿qué tan vulnerable es este negocio
+a un shock externo como el de 2008, 2020 o una devaluación del peso?*
+
+### 🔧 Modelos
+
+**1. Cópula Gaussiana (Riskfolio-Lib / Cholesky)**
+
+Genera variables macroeconómicas correlacionadas entre sí, tal como ocurren en la
+realidad. Las 6 variables simuladas son:
+
+| Variable | Descripción | Fuente |
+|---|---|---|
+| `TIIE` | Tasa interbancaria 28 días | BANXICO SF43878 |
+| `USD_MXN` | Tipo de cambio FIX | BANXICO SF43718 |
+| `INPC` | Inflación general | BANXICO SP1 |
+| `IGAE` | Actividad económica | INEGI |
+| `SOBRECOSTO` | Sobre-costo en materiales | Histórico cliente |
+| `RETRASO_COBRO` | Días promedio de cobro | CxC del cliente |
+
+Mecanismo de correlación (por ejemplo, TIIE ↑ → USD ↑, correlación ρ = 0.7):
+```
+1. Generar u₁, u₂ ~ Uniforme(0,1)
+2. Aplicar cópula Gaussiana con matriz Σ (Cholesky decomposition)
+3. Invertir CDF normal → TIIE y USD_MXN correlacionados
+Resultado: shocks realistas, no independientes
+```
+
+**2. Simulación SimPy (Event-Driven Cash Flow)**
+
+Cadena de pagos discreta mes a mes:
+```
+Cobro de CxC → Pago a proveedores → Saldo de caja → ¿Caja ≤ 0? → Crisis
+```
+Detecta el *mes exacto* de quiebre de liquidez en cada uno de los 10,000 escenarios.
+
+**3. PyMC — Probabilidad Bayesiana de Default**
+
+Modelo Beta-Binomial: infiere la probabilidad de que un cliente no pague basándose
+en los días promedio de retraso histórico. Muestrea 500 draws con 1 cadena MCMC.
+Salida: distribución posterior de la tasa de default, no un número puntual.
+
+### 📊 Cómo interpretar los resultados
+
+**Prob. Quiebra de Liquidez:** Fracción de los 10,000 escenarios donde caja = $0.
+Umbral de acción: >15% = precaución, >30% = activar Escudo 3.
+
+**Distribución de Caja (barras P10-P90):** El rango P10–P90 indica la amplitud
+del riesgo. Un rango estrecho = negocio predecible. Un rango amplio = alta incertidumbre.
+
+**Top 5 Escenarios de Mayor Riesgo:** Los peores escenarios ordenados por caja final.
+Úsalos para el stress test de gobernanza: *"¿puede el negocio sobrevivir este escenario?"*
+
+### 💡 Criterio de Acción
+```
+Prob. default clientes > 20%  →  Revisar política de CxC, solicitar anticipos
+Mes crítico ≤ 3               →  Crisis inminente, convocar Comité de Crisis
+P10 caja < -$1M               →  Gestionar línea de crédito preventiva HOY
+```
+            """)
         stress = pipeline_results.get('stress_results', {})
         if not stress or 'error' in stress:
             st.warning("Escudo 2 no disponible.")
@@ -461,6 +604,59 @@ def vista_consultor_v2(pipeline_results: dict, config):
 
     # ── TAB 4: ESCUDO 3 ──────────────────────────────────────────────────────
     with tab_escudo3:
+        with st.expander("ℹ️ El Bisturí — Motor de Optimización Quirúrgica", expanded=False):
+            st.markdown("""
+### 🎯 Propósito
+Se activa **solo si el Escudo 2 detecta crisis** (prob > 15%). Prescribe el plan
+de rescate óptimo minimizando impacto operativo. Responde: *¿cuál es la mínima
+intervención quirúrgica necesaria para reestablecer la liquidez?*
+
+### 🔧 Modelos — CVXPY (Optimización Convexa)
+
+Tres palancas de capital independientes, cada una como problema de optimización:
+
+| Palanca | Variable | Rango | Costo |
+|---|---|---|---|
+| **Reducción OPEX** | `x` ∈ [0%, 20%] | Recorte de costos fijos | Impacto operativo |
+| **Diferimiento de pagos** | `d` ∈ [0, 45 días] | Negociación con proveedores | Relación comercial |
+| **Factoraje de CxC** | `f` ∈ [0%, 60%] | Adelanto de cuentas por cobrar | 1.5%/mes de comisión |
+
+**Optimización conjunta (Joint Optimization):**
+```
+Maximizar: capital_liberado(x, d, f)
+Sujeto a:  impacto_operativo(x, d, f) ≤ 50%
+           x ≤ 0.20, d ≤ 45, f ≤ 0.60
+```
+Solucionado con CVXPY usando solver SCS (cónico de segundo orden). Converge en < 100ms.
+
+### 📊 Cómo interpretar los resultados
+
+**Capital Total a Liberar:** Suma de caja liberada por las 3 palancas combinadas.
+Debe superar el déficit proyectado por el Escudo 2.
+
+**ROI del Plan:** `(ahorro_crisis_evitada) / (costo_implementación)`.
+Un ROI > 3x justifica ejecución inmediata.
+
+**Estrategias en orden:** Ordenadas de mayor a menor impacto con menor costo operativo.
+Ejecutar en secuencia, no en paralelo, para evitar disrupciones simultáneas.
+
+**Tabla de Optimización Conjunta:** El punto óptimo matemático entre las 3 palancas.
+Si `impacto_operativo` > 40%, discutir con equipo directivo antes de ejecutar.
+
+### ⚠️ Condición de Activación
+```
+Escudo 2: prob_crisis < 15%  →  Escudo 3 muestra "✅ Sin necesidad de rescate"
+Escudo 2: prob_crisis ≥ 15%  →  Escudo 3 genera plan de intervención quirúrgica
+```
+
+### 💡 Protocolo de Ejecución
+```
+Semana 1:  Ejecutar reducción OPEX (acción interna, sin dependencia externa)
+Semana 2:  Negociar diferimiento con top-3 proveedores por monto
+Semana 3:  Activar línea de factoraje con institución bancaria
+Semana 4:  Medir resultado: ¿caja proyectada ≥ $0 en mes crítico?
+```
+            """)
         opt = pipeline_results.get('optimization_results', {})
         if not opt or 'error' in opt:
             st.warning("Escudo 3 no disponible.")
@@ -503,6 +699,62 @@ def vista_consultor_v2(pipeline_results: dict, config):
 
     # ── TAB 5: MONTE CARLO (vista original) ──────────────────────────────────
     with tab_mc:
+        with st.expander("ℹ️ El Motor Base — Monte Carlo Cuántico", expanded=False):
+            st.markdown("""
+### 🎯 Propósito
+Núcleo matemático de Sentinel. Simula **10,000 trayectorias posibles del negocio**
+usando las distribuciones de probabilidad calibradas en el YAML del cliente.
+Responde: *¿cuál es la distribución completa de resultados posibles, no solo el promedio?*
+
+### 🔧 Metodología
+
+**Proceso de simulación (por iteración):**
+```
+Para i = 1 … 10,000:
+  1. Muestrear variables según su distribución (YAML: media, desviación, tipo)
+  2. Calcular resultado = modelo_dinamico(variables, parámetros)
+  3. Almacenar resultado[i]
+Resultado: distribución empírica de 10,000 outcomes
+```
+
+**Análisis de Sensibilidad (Tornado):**
+- Método: **Correlación de Spearman** entre cada variable y el resultado final.
+- Importancia = |ρ_Spearman|² → fracción de varianza explicada.
+- La barra más larga = la variable que más mueve el resultado. Allí está el riesgo principal.
+
+**Traducción Ejecutiva (Business Translator):**
+Convierte estadísticas crudas en narrativa de negocios accionable usando reglas
+de umbral: prob_loss, VaR 95%, rango intercuartil P25–P75.
+
+### 📊 Cómo interpretar los indicadores
+
+**Gauge: Probabilidad de Pérdida**
+- < 10%: Negocio robusto. Sin acción requerida.
+- 10–25%: Zona amarilla. Monitorear mensualmente.
+- > 25%: Zona crítica. Revisar supuestos del YAML y estructura de costos.
+
+**Gauge: VaR 95% (Pérdida Máxima)**
+- Interpretación: *"En el 5% de los peores escenarios, la pérdida supera este monto."*
+- Compara contra reservas de caja del cliente. Si VaR > reservas → riesgo de insolvencia.
+
+**Histograma de Distribución:**
+- Cola izquierda larga = riesgo asimétrico (pérdidas potencialmente ilimitadas).
+- Distribución bimodal = el negocio tiene dos regímenes: ganancia o pérdida clara.
+- Línea P50 muy a la derecha de la media = sesgo positivo, buenos escenarios posibles.
+
+### 💡 Checklist de Sanidad del Modelo
+```
+✅ P50 es razonable para la industria
+✅ P90 - P10 < 3x la media (no hay dispersión explosiva)
+✅ Variable #1 en tornado corresponde al mayor riesgo operativo conocido
+✅ Prob. pérdida < 50% (si > 50%, revisar supuestos del YAML)
+```
+
+### ⚠️ Si P50 es negativo pero P90 es positivo
+El negocio tiene escenarios ganadores pero son minoría. Busca el "switch":
+la variable donde un cambio del +10% convierte pérdida en ganancia. Ese es el
+KPI de gestión prioritario para el cliente.
+            """)
         stats       = pipeline_results.get('statistics', {})
         sensitivity = pipeline_results.get('sensitivity', pd.DataFrame())
         results_df  = pipeline_results.get('simulation_results', pd.DataFrame())
