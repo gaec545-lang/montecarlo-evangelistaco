@@ -23,6 +23,8 @@ import plotly.express as px
 from typing import Dict, List, Any
 from datetime import datetime, timedelta
 
+from supabase import create_client, Client
+
 from src.user_manager import UserManager
 from src.configuration_manager import ConfigurationManager
 from src.decision_pipeline import DecisionPipeline
@@ -42,6 +44,19 @@ st.set_page_config(
 # ═══════════════════════════════════════════════════════════════
 # FUNCIONES DE NEGOCIO (PIPELINE)
 # ═══════════════════════════════════════════════════════════════
+
+@st.cache_resource
+def get_supabase_client() -> Client | None:
+    """Conexión global al Data Mesh. Zero-crash: retorna None si faltan credenciales."""
+    url = os.getenv("SUPABASE_URL") or (st.secrets.get("SUPABASE_URL") if hasattr(st, "secrets") else None)
+    key = os.getenv("SUPABASE_KEY") or (st.secrets.get("SUPABASE_KEY") if hasattr(st, "secrets") else None)
+    if url and key:
+        try:
+            return create_client(url, key)
+        except Exception:
+            return None
+    return None
+
 
 @st.cache_resource
 def load_pipeline(client_file: str):
@@ -642,16 +657,68 @@ def main():
             st.markdown("---")
             
             st.markdown("**🏢 Portafolio de Clientes:**")
-            
-            # --- PROTECCIÓN CONTRA DIRECTORIOS VACÍOS ---
-            client_files = []
-            if os.path.exists('configs/clients'):
-                client_files = [f for f in os.listdir('configs/clients') if f.endswith('.yaml')]
-                
-            if not client_files:
-                client_files = ['SIN_CLIENTES']
 
-            selected_client_file = st.selectbox("Seleccionar Auditoría:", client_files)
+            # ── PUENTE CLOUD-TO-LOCAL ─────────────────────────────────────────
+            # Sincroniza YAMLs desde saas_configuraciones_yaml → configs/clients/
+            _sb          = get_supabase_client()
+            client_names: list[str] = []   # nombres comerciales para el selectbox
+            file_map:     dict[str, str] = {}  # {nombre_comercial: "archivo.yaml"}
+
+            if _sb:
+                try:
+                    res_yaml = (
+                        _sb.table("saas_configuraciones_yaml")
+                        .select("cliente_id, yaml_content")
+                        .eq("es_activo", True)
+                        .execute()
+                    )
+                    res_cli = (
+                        _sb.table("saas_clientes")
+                        .select("id, nombre_comercial")
+                        .execute()
+                    )
+
+                    if res_yaml.data and res_cli.data:
+                        id_to_nombre = {c["id"]: c["nombre_comercial"] for c in res_cli.data}
+
+                        os.makedirs("configs/clients", exist_ok=True)
+
+                        seen: set[str] = set()  # evita duplicados si hay varios YAMLs por cliente
+                        for row in res_yaml.data:
+                            cid          = row.get("cliente_id")
+                            nombre       = id_to_nombre.get(cid)
+                            yaml_content = row.get("yaml_content", "")
+
+                            if not nombre or not yaml_content or cid in seen:
+                                continue
+                            seen.add(cid)
+
+                            # Sanitización del nombre para nombre de archivo
+                            sanitized = (
+                                nombre.lower()
+                                .replace(" ", "_")
+                                .replace("/", "_")
+                                .replace("\\", "_")
+                                .replace(".", "_")
+                                .replace(",", "_")
+                            )
+                            fname = f"{sanitized}.yaml"
+
+                            with open(f"configs/clients/{fname}", "w", encoding="utf-8") as fout:
+                                fout.write(yaml_content)
+
+                            client_names.append(nombre)
+                            file_map[nombre] = fname
+
+                except Exception as _sync_err:
+                    st.warning(f"⚠️ Sincronización Supabase falló: {_sync_err}")
+
+            if client_names:
+                selected_nombre      = st.selectbox("Seleccionar Auditoría:", client_names)
+                selected_client_file = file_map[selected_nombre]
+            else:
+                selected_client_file = "SIN_CLIENTES"
+                st.selectbox("Seleccionar Auditoría:", ["SIN_CLIENTES"], disabled=True)
         else:
             st.markdown("---")
             st.markdown("**🏢 Panel de Cliente:**")
@@ -671,7 +738,11 @@ def main():
     if selected_client_file == 'SIN_CLIENTES':
         st.markdown("<h2 style='color: #1f77b4;'>🛡️ Sentinel Data Mesh en Línea</h2>", unsafe_allow_html=True)
         st.markdown("---")
-        st.info("La infraestructura está operativa, pero no se detectaron Cerebros Estocásticos (YAMLs) activos en el almacenamiento local.")
+        st.info(
+            "El Data Mesh está en línea y conectado a Supabase, pero no se encontraron "
+            "modelos estocásticos activos (`es_activo = True`) en `saas_configuraciones_yaml`. "
+            "Genera el primer modelo desde el Panel de Administración → Cerebro Estocástico."
+        )
         
         st.markdown("""
         ### Próximos Pasos Directivos:
