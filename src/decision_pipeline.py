@@ -140,8 +140,25 @@ class DecisionPipeline:
             lambda: BusinessTranslator(self.config, extracted_data).translate(mc_results['statistics'], mc_results['sensitivity']))
 
         # FASE 4: Inteligencia de Decisiones
+        # generate_recommendations retorna Dict con executive_summary, confidence_level
+        # y recommendations. Normalizamos aquí para que las vistas reciban tipos esperados.
         decision_results = self.run_phase(4, "Decision Intelligence Engine",
             lambda: self.decision_engine.generate_recommendations(mc_results['statistics'], mc_results['sensitivity']))
+
+        # Normalización Zero-Crash: si la IA devuelve dict enriquecido, extraemos las partes
+        if isinstance(decision_results, dict):
+            ai_narrative  = {
+                'executive_summary': decision_results.get('executive_summary', ''),
+                'confidence_level':  decision_results.get('confidence_level', ''),
+            }
+            recommendations_list = decision_results.get('recommendations', [])
+            # Enriquecer la narrativa de negocio con el análisis de IA si la tiene
+            if ai_narrative['executive_summary'] and isinstance(business_narrative, dict):
+                business_narrative.setdefault('ai_summary', ai_narrative['executive_summary'])
+                business_narrative.setdefault('ai_confidence', ai_narrative['confidence_level'])
+        else:
+            # Compatibilidad: si por alguna razón retorna lista (código legacy)
+            recommendations_list = decision_results if isinstance(decision_results, list) else []
 
         return {
             'raw_data': extracted_data,
@@ -152,6 +169,6 @@ class DecisionPipeline:
             'statistics': mc_results['statistics'],
             'sensitivity': mc_results['sensitivity'],
             'business_narrative': business_narrative,
-            'recommendations': decision_results,
+            'recommendations': recommendations_list,          # Siempre lista para las vistas
             'execution_summary': self.pipeline_state
         }
