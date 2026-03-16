@@ -13,6 +13,7 @@ import re
 import json
 import base64
 import hashlib
+import bcrypt
 import streamlit as st
 import pandas as pd
 from typing import Optional, Tuple
@@ -264,6 +265,80 @@ def probar_conexion_sql(
 # ==============================================================================
 # 7. CARGA DE DATOS
 # ==============================================================================
+# ==============================================================================
+# HELPERS DE GESTIÓN DE USUARIOS
+# ==============================================================================
+
+ROLE_MAP_CONS = {
+    "Consultor Estratégico": "Consultor",
+    "Admin":                 "Admin",
+    "Partner":               "Consultor",
+}
+
+
+def _hash_password(plaintext: str) -> str:
+    """Hashea la contraseña con bcrypt (12 rounds). Retorna string UTF-8."""
+    return bcrypt.hashpw(plaintext.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+
+def _username_exists(username: str) -> bool:
+    """Retorna True si el username ya existe en saas_users."""
+    try:
+        res = supabase.table("saas_users").select("id").eq("username", username).execute()
+        return bool(res.data)
+    except Exception:
+        return False
+
+
+def _email_exists(email: str) -> bool:
+    """Retorna True si el email ya existe en saas_users."""
+    try:
+        res = supabase.table("saas_users").select("id").eq("email", email).execute()
+        return bool(res.data)
+    except Exception:
+        return False
+
+
+def _validate_credentials(username: str, password: str, confirm: str) -> list[str]:
+    """Retorna lista de errores de validación de credenciales (vacía = OK)."""
+    errors: list[str] = []
+    if not username.strip():
+        errors.append("El nombre de usuario es obligatorio.")
+    elif len(username.strip()) < 3:
+        errors.append("El usuario debe tener al menos 3 caracteres.")
+    elif not re.match(r'^[a-z0-9_\.]+$', username.strip().lower()):
+        errors.append("El usuario solo puede tener letras minúsculas, números, _ y .")
+    if not password:
+        errors.append("La contraseña es obligatoria.")
+    elif len(password) < 8:
+        errors.append("La contraseña debe tener al menos 8 caracteres.")
+    if password and password != confirm:
+        errors.append("Las contraseñas no coinciden.")
+    return errors
+
+
+def _create_system_user(
+    username: str,
+    password: str,
+    nombre_completo: str,
+    email: str,
+    role: str,
+    client_id: str | None = None,
+    created_by: str | None = None,
+) -> None:
+    """Inserta un nuevo usuario en saas_users. Lanza excepción si falla."""
+    supabase.table("saas_users").insert({
+        "username":        username.strip().lower(),
+        "password_hash":   _hash_password(password),
+        "nombre_completo": nombre_completo.strip(),
+        "email":           email.strip().lower(),
+        "role":            role,
+        "client_id":       client_id,
+        "is_active":       True,
+        "created_by":      created_by or "admin-panel",
+    }).execute()
+
+
 def load_consultores() -> list:
     try:
         return supabase.table("saas_consultores").select("*").order("nombre").execute().data or []
@@ -319,25 +394,59 @@ with tab1:
     # ── Crear ─────────────────────────────────────────────────────────────────
     with st.expander("➕ Registrar Nuevo Consultor", expanded=False):
         with st.form("form_nuevo_consultor"):
+            st.markdown("**Perfil**")
             c1, c2, c3 = st.columns(3)
             n_nombre = c1.text_input("Nombre Completo")
             n_email  = c2.text_input("Correo Corporativo")
             n_rol    = c3.selectbox("Rol", ["Consultor Estratégico", "Admin", "Partner"])
-            if st.form_submit_button("Registrar"):
-                if not n_nombre.strip() or not n_email.strip():
-                    st.warning("Nombre y correo son obligatorios.")
+
+            st.markdown("**🔑 Credenciales de Acceso al Sistema**")
+            ca, cb, cc = st.columns(3)
+            n_user  = ca.text_input("Usuario de Login", placeholder="ej. jgarcia")
+            n_pass  = cb.text_input("Contraseña", type="password")
+            n_pass2 = cc.text_input("Confirmar Contraseña", type="password")
+
+            if st.form_submit_button("Registrar Consultor y Crear Acceso"):
+                errors: list[str] = []
+                if not n_nombre.strip():
+                    errors.append("El nombre completo es obligatorio.")
+                if not n_email.strip():
+                    errors.append("El correo es obligatorio.")
+                errors += _validate_credentials(n_user, n_pass, n_pass2)
+
+                if errors:
+                    for err in errors:
+                        st.error(f"❌ {err}")
                 else:
-                    try:
-                        supabase.table("saas_consultores").insert({
-                            "nombre": n_nombre.strip(),
-                            "email":  n_email.strip().lower(),
-                            "rol":    n_rol,
-                            "activo": True,
-                        }).execute()
-                        st.success(f"✅ {n_nombre} registrado.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                    username_clean = n_user.strip().lower()
+                    if _username_exists(username_clean):
+                        st.error(f"❌ El usuario `{username_clean}` ya existe en el sistema.")
+                    else:
+                        try:
+                            # 1. Crear perfil de consultor
+                            supabase.table("saas_consultores").insert({
+                                "nombre": n_nombre.strip(),
+                                "email":  n_email.strip().lower(),
+                                "rol":    n_rol,
+                                "activo": True,
+                            }).execute()
+
+                            # 2. Crear acceso al sistema
+                            _create_system_user(
+                                username=username_clean,
+                                password=n_pass,
+                                nombre_completo=n_nombre.strip(),
+                                email=n_email.strip().lower(),
+                                role=ROLE_MAP_CONS.get(n_rol, "Consultor"),
+                                created_by=st.session_state.get("username", "admin"),
+                            )
+                            st.success(
+                                f"✅ **{n_nombre}** registrado correctamente.  \n"
+                                f"Usuario de acceso: `{username_clean}` | Rol: `{ROLE_MAP_CONS.get(n_rol,'Consultor')}`"
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
     # ── Listar ────────────────────────────────────────────────────────────────
     st.markdown("##### Consultores Registrados")
@@ -435,12 +544,35 @@ with tab2:
             n_ind     = c3.selectbox("Industria", INDUSTRIAS)
             n_contact = c4.text_input("Contacto Principal")
             n_email_c = st.text_input("Email de Contacto")
-            if st.form_submit_button("Dar de Alta"):
+
+            st.markdown("**🔑 Acceso al Portal (Vista Ejecutivo)**")
+            st.caption("El cliente podrá ver el semáforo y reportes con estas credenciales.")
+            ca, cb, cc = st.columns(3)
+            n_cl_user  = ca.text_input("Usuario de Login", placeholder="ej. cliente_empresa")
+            n_cl_pass  = cb.text_input("Contraseña", type="password")
+            n_cl_pass2 = cc.text_input("Confirmar Contraseña", type="password")
+
+            if st.form_submit_button("Dar de Alta y Crear Acceso"):
+                errors: list[str] = []
                 if not n_nc.strip():
-                    st.warning("El nombre comercial es obligatorio.")
+                    errors.append("El nombre comercial es obligatorio.")
+                # Validar credenciales solo si se proporcionaron
+                crear_acceso = bool(n_cl_user.strip() or n_cl_pass or n_cl_pass2)
+                if crear_acceso:
+                    cred_errors = _validate_credentials(n_cl_user, n_cl_pass, n_cl_pass2)
+                    errors.extend(cred_errors)
+                    if not errors and _username_exists(n_cl_user.strip().lower()):
+                        errors.append(f"El usuario '{n_cl_user.strip().lower()}' ya existe.")
+                    if not errors and n_email_c.strip() and _email_exists(n_email_c.strip().lower()):
+                        errors.append(f"El email '{n_email_c.strip().lower()}' ya está en uso en saas_users.")
+
+                if errors:
+                    for err in errors:
+                        st.warning(err)
                 else:
                     try:
-                        supabase.table("saas_clientes").insert({
+                        # 1️⃣ Insertar en saas_clientes y recuperar UUID
+                        res_cli = supabase.table("saas_clientes").insert({
                             "nombre_comercial": n_nc.strip(),
                             "rfc":              n_rfc.strip().upper(),
                             "industria":        n_ind,
@@ -448,7 +580,24 @@ with tab2:
                             "email_contacto":   n_email_c.strip().lower(),
                             "estatus":          "Activo",
                         }).execute()
-                        st.success(f"✅ {n_nc} dado de alta.")
+
+                        new_client_id = res_cli.data[0]["id"] if res_cli.data else None
+
+                        # 2️⃣ Crear usuario Ejecutivo si se proporcionaron credenciales
+                        if crear_acceso and new_client_id:
+                            nombre_completo = n_contact.strip() or n_nc.strip()
+                            _create_system_user(
+                                username=n_cl_user,
+                                password=n_cl_pass,
+                                nombre_completo=nombre_completo,
+                                email=n_email_c.strip().lower() or f"{n_cl_user.strip().lower()}@cliente.local",
+                                role="Ejecutivo",
+                                client_id=str(new_client_id),
+                                created_by=st.session_state.get("username", "admin-panel"),
+                            )
+                            st.success(f"✅ Cliente **{n_nc}** dado de alta con acceso de portal creado para **{n_cl_user.strip().lower()}**.")
+                        else:
+                            st.success(f"✅ {n_nc} dado de alta (sin acceso de portal).")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")

@@ -177,8 +177,20 @@ def login_page():
                 st.session_state.authenticated = True
                 st.session_state.role = user.role
                 st.session_state.username = user.nombre_completo
+                st.session_state.user_login = username.strip().lower()  # FIX: store raw login for Supabase lookup
                 st.session_state.user_email = user.email
                 st.session_state.client_id = getattr(user, 'client_id', None)
+                # FIX: user_manager.py lee 'cliente_id' pero la columna real es 'client_id'
+                # Si client_id sigue vacío (bug del user_manager), hacemos lookup directo.
+                if not st.session_state.client_id and user.role == "Ejecutivo":
+                    try:
+                        _sb = get_supabase_client()
+                        if _sb:
+                            _res = _sb.table("saas_users").select("client_id").eq("username", username.strip().lower()).execute()
+                            if _res.data:
+                                st.session_state.client_id = _res.data[0].get("client_id")
+                    except Exception:
+                        pass
                 st.session_state.last_activity = datetime.now().isoformat()
                 st.rerun()
             else:
@@ -848,6 +860,90 @@ def vista_ejecutivo_v2(pipeline_results: dict, config):
 
 
 # ═══════════════════════════════════════════════════════════════
+# VISTA CLIENTE (EJECUTIVO) — Semáforo + Reportes
+# ═══════════════════════════════════════════════════════════════
+
+def vista_cliente(pipeline_results: dict, config):
+    """Vista restringida para usuarios Ejecutivo (clientes).
+    Muestra únicamente: semáforo de 12 meses + exportación de reportes.
+    Zero-Crash: maneja dict vacíos de cualquier escudo fallido."""
+    client_name = config.get('client.name', 'Cliente')
+    stats  = pipeline_results.get('statistics', {})
+    stress = pipeline_results.get('stress_results', {})
+    prob   = stress.get('probabilidad_crisis', 0)
+    mes_c  = stress.get('mes_critico')
+
+    st.markdown(
+        f"<h2 style='color:#1A1A2E;'>🏢 Portal — {client_name}</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("---")
+
+    tab_sem, tab_rep = st.tabs(["🚦 Semáforo", "📄 Reportes"])
+
+    # ── Tab 1: Semáforo ───────────────────────────────────────────────────────
+    with tab_sem:
+        st.subheader("🚦 Estado General del Negocio")
+
+        # Banner de alerta ejecutiva
+        if prob > 0.30:
+            st.error(
+                f"🔴 **ALERTA CRÍTICA:** Crisis proyectada con **{prob:.0%}** de probabilidad "
+                f"en el mes {mes_c}. Contacte a su consultor estratégico de inmediato."
+            )
+        elif prob > 0.15:
+            st.warning(
+                f"🟡 **PRECAUCIÓN:** Señales de riesgo moderado (**{prob:.0%}**). "
+                "Se recomienda revisar los indicadores con su equipo."
+            )
+        else:
+            st.success("🟢 **TODO EN ORDEN:** No se detectan crisis en el horizonte de 12 meses.")
+
+        # KPIs ejecutivos
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Resultado Esperado",  f"${stats.get('p50', 0):,.0f}", "Mediana P50")
+        col2.metric("Escenario Optimista", f"${stats.get('p90', 0):,.0f}", "P90")
+        col3.metric("Escenario Pesimista", f"${stats.get('p10', 0):,.0f}", "P10", delta_color="inverse")
+        col4.metric("Riesgo de Pérdida",   f"{stats.get('prob_loss', 0):.1%}", delta_color="inverse")
+
+        # Semáforo mensual (12 meses completos para cliente)
+        semaforo = stress.get('semaforo', {})
+        if semaforo:
+            st.markdown("---")
+            st.subheader("📅 Semáforo — Horizonte 12 Meses")
+            cols_sem = st.columns(6)
+            for mes in range(1, 7):
+                s = semaforo.get(mes, {})
+                with cols_sem[mes - 1]:
+                    st.metric(f"Mes {mes}", s.get('emoji', '🟢'), s.get('estado', 'OK'))
+            cols_sem2 = st.columns(6)
+            for mes in range(7, 13):
+                s = semaforo.get(mes, {})
+                with cols_sem2[mes - 7]:
+                    st.metric(f"Mes {mes}", s.get('emoji', '🟢'), s.get('estado', 'OK'))
+        else:
+            st.info("El semáforo estará disponible una vez que el consultor complete el análisis.")
+
+        # Distribución de resultados (simplificada)
+        results_df = pipeline_results.get('simulation_results')
+        if results_df is not None and stats:
+            st.markdown("---")
+            st.subheader("📊 Distribución de Resultados")
+            st.plotly_chart(render_distribution_chart(results_df, stats), use_container_width=True)
+
+    # ── Tab 2: Reportes ───────────────────────────────────────────────────────
+    with tab_rep:
+        st.subheader("📄 Exportar Reportes")
+        st.markdown(
+            "Descarga el reporte ejecutivo de su empresa en formato PDF. "
+            "El documento incluye el semáforo, KPIs y resumen de riesgos proyectados."
+        )
+        st.markdown("---")
+        render_export_section(pipeline_results, client_name, "Ejecutivo")
+
+
+# ═══════════════════════════════════════════════════════════════
 # APLICACIÓN PRINCIPAL
 # ═══════════════════════════════════════════════════════════════
 
@@ -972,11 +1068,53 @@ def main():
                 selected_client_file = "SIN_CLIENTES"
                 st.selectbox("Seleccionar Auditoría:", ["SIN_CLIENTES"], disabled=True)
         else:
+            # ── EJECUTIVO: Carga el YAML del cliente asignado desde Supabase ────
             st.markdown("---")
-            st.markdown("**🏢 Panel de Cliente:**")
-            client_id = st.session_state.get('client_id', 'Desconocido')
-            st.info(f"ID: {client_id}")
-            selected_client_file = f"{client_id}_config.yaml"
+            st.markdown("**🏢 Portal de Cliente:**")
+            client_id = st.session_state.get('client_id')
+            selected_client_file = "SIN_CLIENTES"
+
+            if client_id:
+                _sb_exec = get_supabase_client()
+                if _sb_exec:
+                    try:
+                        res_ey = (
+                            _sb_exec.table("saas_configuraciones_yaml")
+                            .select("yaml_content")
+                            .eq("cliente_id", client_id)
+                            .eq("es_activo", True)
+                            .limit(1)
+                            .execute()
+                        )
+                        res_ec = (
+                            _sb_exec.table("saas_clientes")
+                            .select("nombre_comercial")
+                            .eq("id", client_id)
+                            .limit(1)
+                            .execute()
+                        )
+                        if res_ey.data and res_ec.data:
+                            yaml_content_exec = res_ey.data[0].get("yaml_content", "")
+                            nombre_exec       = res_ec.data[0].get("nombre_comercial", "cliente")
+                            sanitized_exec    = (
+                                nombre_exec.lower()
+                                .replace(" ", "_").replace("/", "_")
+                                .replace("\\", "_").replace(".", "_").replace(",", "_")
+                            )
+                            fname_exec = f"{sanitized_exec}.yaml"
+                            os.makedirs("configs/clients", exist_ok=True)
+                            with open(f"configs/clients/{fname_exec}", "w", encoding="utf-8") as fout:
+                                fout.write(yaml_content_exec)
+                            selected_client_file = fname_exec
+                            st.info(f"**{nombre_exec}**")
+                        else:
+                            st.warning("⚠️ Sin modelo activo. Contacte a su consultor.")
+                    except Exception as _exec_err:
+                        st.warning(f"⚠️ Error al cargar perfil: {_exec_err}")
+                else:
+                    st.warning("⚠️ Sin conexión a Supabase.")
+            else:
+                st.warning("⚠️ Sin cliente asignado. Contacte al administrador.")
             
         st.markdown("---")
         st.markdown("**⚙️ Sentinel V2 — 3 Escudos:**")
@@ -1020,7 +1158,7 @@ def main():
             triggers = []
             
         if st.session_state.role == "Ejecutivo":
-            vista_ejecutivo_v2(pipeline_results, config)
+            vista_cliente(pipeline_results, config)
         elif st.session_state.role in ["Consultor", "Admin"]:
             vista_consultor_v2(pipeline_results, config)
         else:

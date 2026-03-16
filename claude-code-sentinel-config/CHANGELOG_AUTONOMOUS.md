@@ -6,6 +6,35 @@
 
 <!-- Las entradas se agregan al inicio, la más reciente primero -->
 
+## [2026-03-15] Phase 2.2: Acceso de Clientes + Vista Ejecutivo Restringida
+
+### Decisiones Tomadas
+- **Admin Panel / Tab 2 — Clientes:** Las credenciales son OPCIONALES en la creación de cliente. Si el admin llena los 3 campos (usuario/contraseña/confirmación), se crea el acceso; si los deja vacíos, el cliente se registra sin portal. Razón: hay clientes de BD / análisis que no necesitan portal web — forzar credenciales sería un obstáculo innecesario.
+- **`_email_exists()`:** Nueva función helper agregada junto a `_username_exists()`. Valida unicidad de email en `saas_users` antes del INSERT para evitar error 409 del servidor. Razón: el email en `saas_users` tiene constraint UNIQUE; mejor validar en frontend primero con mensaje amigable.
+- **`vista_cliente()`:** Nueva función separada de `vista_ejecutivo_v2()`. Muestra semáforo de 12 meses (no 6) y tab de reportes. Razón: el cliente ve su horizonte completo — truncar a 6 meses sería reducir valor de la herramienta sin beneficio UX.
+- **Login `client_id` fallback:** Compensación en `login_page()` para el bug de `user_manager.py` que lee `cliente_id` pero la columna real es `client_id`. Si `st.session_state.client_id` está vacío post-login y el rol es Ejecutivo, se hace un lookup directo a `saas_users` usando el username raw. No se modifica `user_manager.py` porque es archivo protegido.
+- **Ejecutivo sidebar:** Reemplazado el placeholder `f"{client_id}_config.yaml"` por un sync real desde Supabase — queries a `saas_configuraciones_yaml` + `saas_clientes`, escribe YAML a `configs/clients/`, mismo patrón que el sidebar de Consultor.
+
+### Código Modificado
+- `app/pages/3_⚙️_Admin_Panel.py` — Tab 2 (Clientes): form actualizado con campos de credenciales + `_email_exists()` helper
+- `app/streamlit_app.py` — `login_page()`: fallback `client_id` lookup; sidebar Ejecutivo: sync YAML desde Supabase; `vista_cliente()`: nueva función 2-tab; dispatch: `vista_ejecutivo_v2` → `vista_cliente`
+
+### Features Implementadas
+- Tab 2 Admin Panel: campo usuario/contraseña/confirmar opcionales; crea `saas_clientes` primero, captura UUID, luego crea `saas_users` con `role="Ejecutivo"` y `client_id` vinculado
+- `vista_cliente()`: Tab Semáforo (12 meses completos, KPIs, banner de alerta, distribución) + Tab Reportes (PDF export)
+- Login robusto: compensa bug de `user_manager.py` con lookup directo post-autenticación
+
+### Stress Tests Ejecutados
+- AST parse Admin Panel: PASS
+- AST parse streamlit_app.py: PASS
+- Credenciales opcionales: crear_acceso=True solo si algún campo fue llenado — evita validación forzada en alta rápida
+- Fallback email vacío: `n_email_c.strip() or f"{username}@cliente.local"` previene constraint NOT NULL en email
+
+### Deuda Técnica Identificada
+- **Bloqueo/desbloqueo del usuario Ejecutivo al bloquear Cliente** — Prioridad: MEDIA — Actualmente bloquear un cliente en Tab 2 solo cambia `saas_clientes.estatus`; no deshabilita `saas_users.is_active`. Necesita trigger Supabase o lógica en el botón de bloqueo.
+
+---
+
 ## [2026-03-15] Phase 2.1: Descripciones Consultoras en Tabs del Dashboard
 
 ### Decisiones Tomadas
