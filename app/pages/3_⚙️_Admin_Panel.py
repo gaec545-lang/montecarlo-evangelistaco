@@ -324,7 +324,7 @@ def _create_system_user(
     email: str,
     role: str,
     client_id: str | None = None,
-    created_by: str | None = None,
+    created_by: str | None = None,  # reservado para uso futuro si se agrega la columna
 ) -> None:
     """Inserta un nuevo usuario en saas_users. Lanza excepción si falla."""
     supabase.table("saas_users").insert({
@@ -335,7 +335,6 @@ def _create_system_user(
         "role":            role,
         "client_id":       client_id,
         "is_active":       True,
-        "created_by":      created_by or "admin-panel",
     }).execute()
 
 
