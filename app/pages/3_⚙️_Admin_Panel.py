@@ -19,27 +19,20 @@ import pandas as pd
 from typing import Optional, Tuple
 from supabase import create_client, Client
 
+# ──────────────────────────────────────────────────────────────
+# UI/UX Enhancement - Evangelista & Co
+from app.config.custom_css import get_custom_css
+# ──────────────────────────────────────────────────────────────
+
 # ==============================================================================
 # 1. CONFIGURACIÓN DE PÁGINA
 # ==============================================================================
 st.set_page_config(page_title="Sentinel | Admin", page_icon="⚙️", layout="wide")
 
-st.markdown("""
-    <style>
-        [data-testid="stSidebarNav"] {display: none !important;}
-        .stButton>button { border: 1px solid #D4AF37; background-color: transparent; }
-        .stButton>button:hover { border: 1px solid #1A1A2E; color: #1A1A2E; }
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
-        [data-testid="stSidebar"] label, [data-testid="stSidebar"] h3,
-        [data-testid="stSidebar"] strong { color: #FFFFFF !important; }
-        div[data-baseweb="base-input"], div[data-baseweb="select"] > div {
-            background-color: #FFFFFF !important; border: 1px solid #D4AF37 !important; border-radius: 4px;
-        }
-        div[data-baseweb="base-input"] input, div[data-baseweb="select"] div {
-            color: #1A1A2E !important; -webkit-text-fill-color: #1A1A2E !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# ──────────────────────────────────────────────────────────────
+# Aplicar diseño Evangelista
+st.markdown(get_custom_css(), unsafe_allow_html=True)
+# ──────────────────────────────────────────────────────────────
 
 # ==============================================================================
 # 2. BARRERA DE SEGURIDAD
@@ -80,9 +73,24 @@ def init_supabase(url: str, key: str) -> Optional[Client]:
 
 supabase = init_supabase(_url, _key)
 
-st.title("⚙️ Panel de Control Institucional")
-st.markdown("*Evangelista & Co. | Infraestructura de Decision Intelligence*")
-st.markdown("---")
+# ══════════════════════════════════════════════════════════════════════════════
+# HEADER PANEL DE CONTROL
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.markdown("""
+    <div style='max-width: 1400px; margin: 0 auto; padding: 0 2rem;'>
+        <h1 style='font-family: "Cormorant Garamond", serif;
+                   font-size: 32px; font-weight: 700;
+                   color: #1A1A1A; margin: 2rem 0 0.5rem 0;
+                   border-bottom: 3px solid #6B7B5E;
+                   padding-bottom: 0.75rem;'>
+            ⚙️ Panel de Control Institucional
+        </h1>
+        <p style='color: #8E8E93; font-size: 15px; margin-bottom: 2rem;'>
+            Evangelista & Co. | Infraestructura de Decision Intelligence
+        </p>
+    </div>
+""", unsafe_allow_html=True)
 
 if not supabase:
     st.error("⛔ ALERTA ESTRUCTURAL: Faltan credenciales de Supabase.")
@@ -384,6 +392,9 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🧠 Cerebro Estocástico (YAML)",
 ])
 
+# Espaciado después de tabs
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 1: CONSULTORES
 # ──────────────────────────────────────────────────────────────────────────────
@@ -392,6 +403,13 @@ with tab1:
 
     # ── Crear ─────────────────────────────────────────────────────────────────
     with st.expander("➕ Registrar Nuevo Consultor", expanded=False):
+        st.markdown("""
+            <div style='background: rgba(255,255,255,0.95);
+                        border-radius: 16px;
+                        border: 1px solid rgba(229,229,234,0.5);
+                        padding: 1.5rem;
+                        box-shadow: 0 4px 16px rgba(0,0,0,0.08);'>
+        """, unsafe_allow_html=True)
         with st.form("form_nuevo_consultor"):
             st.markdown("**Perfil**")
             c1, c2, c3 = st.columns(3)
@@ -446,12 +464,27 @@ with tab1:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Listar ────────────────────────────────────────────────────────────────
-    st.markdown("##### Consultores Registrados")
+    st.markdown("""
+        <h3 style='font-size: 20px; font-weight: 600; color: #1A1A1A;
+                   margin: 2rem 0 1rem 0; padding-bottom: 0.5rem;
+                   border-bottom: 2px solid #E5E5EA;'>
+            Consultores Registrados
+        </h3>
+    """, unsafe_allow_html=True)
     ROLES_CONS = ["Consultor Estratégico", "Admin", "Partner"]
 
     for c in load_consultores():
+        st.markdown("""
+            <div style='background: rgba(255,255,255,0.95);
+                        border-radius: 12px;
+                        border: 1px solid rgba(229,229,234,0.5);
+                        padding: 1rem 1.25rem;
+                        margin-bottom: 1rem;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04);'>
+        """, unsafe_allow_html=True)
         cid    = c.get("id")
         activo = c.get("activo", True)
         estado = "🔓 Activo" if activo else "🔒 Bloqueado"
@@ -520,7 +553,7 @@ with tab1:
                 st.session_state.pop(f"del_c_{cid}", None)
                 st.rerun()
 
-        st.markdown("<hr style='margin:4px 0; border-color:#f0f0f0;'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 2: CLIENTES
@@ -535,6 +568,13 @@ with tab2:
 
     # ── Crear ─────────────────────────────────────────────────────────────────
     with st.expander("➕ Dar de Alta Cliente", expanded=False):
+        st.markdown("""
+            <div style='background: rgba(255,255,255,0.95);
+                        border-radius: 16px;
+                        border: 1px solid rgba(229,229,234,0.5);
+                        padding: 1.5rem;
+                        box-shadow: 0 4px 16px rgba(0,0,0,0.08);'>
+        """, unsafe_allow_html=True)
         with st.form("form_nuevo_cliente"):
             c1, c2 = st.columns(2)
             n_nc      = c1.text_input("Nombre Comercial")
@@ -600,11 +640,26 @@ with tab2:
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Listar ────────────────────────────────────────────────────────────────
-    st.markdown("##### Clientes en Portafolio")
+    st.markdown("""
+        <h3 style='font-size: 20px; font-weight: 600; color: #1A1A1A;
+                   margin: 2rem 0 1rem 0; padding-bottom: 0.5rem;
+                   border-bottom: 2px solid #E5E5EA;'>
+            Clientes en Portafolio
+        </h3>
+    """, unsafe_allow_html=True)
 
     for cl in load_clientes():
+        st.markdown("""
+            <div style='background: rgba(255,255,255,0.95);
+                        border-radius: 12px;
+                        border: 1px solid rgba(229,229,234,0.5);
+                        padding: 1rem 1.25rem;
+                        margin-bottom: 1rem;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04);'>
+        """, unsafe_allow_html=True)
         clid   = cl.get("id")
         activo = cl.get("estatus", "Activo") == "Activo"
         estado = "🟢 Activo" if activo else "🔴 Bloqueado"
@@ -683,7 +738,7 @@ with tab2:
                 st.session_state.pop(f"del_cl_{clid}", None)
                 st.rerun()
 
-        st.markdown("<hr style='margin:4px 0; border-color:#f0f0f0;'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 3: ASIGNACIONES
@@ -701,6 +756,13 @@ with tab3:
     # ── Crear ─────────────────────────────────────────────────────────────────
     if dcons_t3 and dcli_t3:
         with st.expander("➕ Nueva Asignación", expanded=False):
+            st.markdown("""
+                <div style='background: rgba(255,255,255,0.95);
+                            border-radius: 16px;
+                            border: 1px solid rgba(229,229,234,0.5);
+                            padding: 1.5rem;
+                            box-shadow: 0 4px 16px rgba(0,0,0,0.08);'>
+            """, unsafe_allow_html=True)
             with st.form("form_nueva_asig"):
                 sel_c = st.selectbox("Consultor (activos)", list(dcons_t3.keys()))
                 sel_cl = st.selectbox("Cliente (activos)",   list(dcli_t3.keys()))
@@ -722,17 +784,32 @@ with tab3:
                             st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
+            st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.warning("Se necesita al menos 1 consultor y 1 cliente activos.")
 
     # ── Listar ────────────────────────────────────────────────────────────────
-    st.markdown("##### Asignaciones Activas")
+    st.markdown("""
+        <h3 style='font-size: 20px; font-weight: 600; color: #1A1A1A;
+                   margin: 2rem 0 1rem 0; padding-bottom: 0.5rem;
+                   border-bottom: 2px solid #E5E5EA;'>
+            Asignaciones Activas
+        </h3>
+    """, unsafe_allow_html=True)
     asigs = load_asignaciones()
 
     if not asigs:
         st.info("No hay asignaciones registradas.")
 
     for asig in asigs:
+        st.markdown("""
+            <div style='background: rgba(255,255,255,0.95);
+                        border-radius: 12px;
+                        border: 1px solid rgba(229,229,234,0.5);
+                        padding: 1rem 1.25rem;
+                        margin-bottom: 1rem;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04);'>
+        """, unsafe_allow_html=True)
         aid      = asig.get("id")
         c_nom    = id_to_cons.get(asig.get("consultor_id"), "—")
         cl_nom   = id_to_cli.get(asig.get("cliente_id"), "—")
@@ -798,7 +875,7 @@ with tab3:
                 st.session_state.pop(f"del_a_{aid}", None)
                 st.rerun()
 
-        st.markdown("<hr style='margin:4px 0; border-color:#f0f0f0;'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 4: CREDENCIALES BD — CONEXIONES VERSÁTILES
@@ -833,6 +910,13 @@ with tab4:
     else:
         # ── NUEVA CREDENCIAL ──────────────────────────────────────────────────
         with st.expander("➕ Agregar Nueva Credencial", expanded=False):
+            st.markdown("""
+                <div style='background: rgba(255,255,255,0.95);
+                            border-radius: 16px;
+                            border: 1px solid rgba(229,229,234,0.5);
+                            padding: 1.5rem;
+                            box-shadow: 0 4px 16px rgba(0,0,0,0.08);'>
+            """, unsafe_allow_html=True)
 
             # Radio FUERA del form para cambio dinámico de campos
             metodo = st.radio(
@@ -1012,14 +1096,30 @@ with tab4:
                         except Exception as e:
                             st.error(f"Error: {e}")
 
+            st.markdown("</div>", unsafe_allow_html=True)
+
         # ── LISTAR CREDENCIALES ───────────────────────────────────────────────
-        st.markdown("##### Credenciales Registradas")
+        st.markdown("""
+            <h3 style='font-size: 20px; font-weight: 600; color: #1A1A1A;
+                       margin: 2rem 0 1rem 0; padding-bottom: 0.5rem;
+                       border-bottom: 2px solid #E5E5EA;'>
+                Credenciales Registradas
+            </h3>
+        """, unsafe_allow_html=True)
         creds = load_credenciales()
 
         if not creds:
             st.info("No hay credenciales registradas.")
 
         for cr in creds:
+            st.markdown("""
+                <div style='background: rgba(255,255,255,0.95);
+                            border-radius: 12px;
+                            border: 1px solid rgba(229,229,234,0.5);
+                            padding: 1rem 1.25rem;
+                            margin-bottom: 1rem;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.04);'>
+            """, unsafe_allow_html=True)
             crid    = cr.get("id")
             metodo_cr = cr.get("metodo_conexion", "sql_directo")
             cli_nm  = id_to_cli4.get(cr.get("cliente_id"), "—")
@@ -1136,7 +1236,7 @@ with tab4:
                     st.session_state.pop(f"del_cr_{crid}", None)
                     st.rerun()
 
-            st.markdown("<hr style='margin:4px 0; border-color:#f0f0f0;'>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 5: YAML BUILDER
@@ -1218,3 +1318,6 @@ with tab5:
                     st.session_state["yaml_editor"] = nuevo_yaml_txt
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
+
+# Cerrar container principal
+st.markdown("</div>", unsafe_allow_html=True)
