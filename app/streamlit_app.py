@@ -53,15 +53,35 @@ st.markdown(get_custom_css(), unsafe_allow_html=True)
 get_evangelista_theme()
 # ──────────────────────────────────────────────────────────────
 
-# Header con logo Evangelista
-col1, col2 = st.columns([1, 4])
-with col1:
-    st.image("assets/logoEvangelistaCo.png", width=60)
-with col2:
-    st.markdown("<h1 style='margin-top: 0;'>Sentinel</h1>", unsafe_allow_html=True)
-    st.caption("Decision Intelligence Platform • Evangelista & Co")
+# ══════════════════════════════════════════════════════════════════════════════
+# HEADER CON LOGO CENTRADO
+# ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("<br>", unsafe_allow_html=True)
+# Container con padding y max-width
+st.markdown("""
+    <div style='max-width: 1400px; margin: 0 auto; padding: 1rem 2rem;'>
+""", unsafe_allow_html=True)
+
+# Logo + Título alineados verticalmente
+col1, col2, col3 = st.columns([1, 10, 1])
+with col2:
+    logo_col, text_col = st.columns([1, 8])
+    with logo_col:
+        st.image("assets/logoEvangelistaCo.png", width=80)
+    with text_col:
+        st.markdown("""
+            <div style='margin-top: 12px;'>
+                <h1 style='margin: 0; line-height: 1; font-family: "Cormorant Garamond", serif;'>Sentinel</h1>
+                <p style='margin: 0; color: #8E8E93; font-size: 14px;'>Decision Intelligence Platform • Evangelista & Co</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Separador visual
+st.markdown("""
+    <hr style='margin: 1.5rem 0; border: none; border-top: 2px solid #E5E5EA;'>
+""", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
 # FUNCIONES DE NEGOCIO (PIPELINE)
