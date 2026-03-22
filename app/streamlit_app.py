@@ -30,6 +30,12 @@ from src.configuration_manager import ConfigurationManager
 from src.decision_pipeline import DecisionPipeline
 from src.report_generator import ReportGenerator
 
+# ──────────────────────────────────────────────────────────────
+# UI/UX Enhancement - Evangelista & Co
+from app.config.custom_css import get_custom_css
+from app.config.plotly_theme import get_evangelista_theme
+# ──────────────────────────────────────────────────────────────
+
 # ═══════════════════════════════════════════════════════════════
 # CONFIGURACIÓN DE PÁGINA
 # ═══════════════════════════════════════════════════════════════
@@ -40,6 +46,22 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ──────────────────────────────────────────────────────────────
+# Aplicar diseño Evangelista
+st.markdown(get_custom_css(), unsafe_allow_html=True)
+get_evangelista_theme()
+# ──────────────────────────────────────────────────────────────
+
+# Header con logo Evangelista
+col1, col2 = st.columns([1, 4])
+with col1:
+    st.image("assets/logoEvangelistaCo.png", width=60)
+with col2:
+    st.markdown("<h1 style='margin-top: 0;'>Sentinel</h1>", unsafe_allow_html=True)
+    st.caption("Decision Intelligence Platform • Evangelista & Co")
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
 # FUNCIONES DE NEGOCIO (PIPELINE)
