@@ -22,6 +22,7 @@ from supabase import create_client, Client
 # ──────────────────────────────────────────────────────────────
 # UI/UX Enhancement - Evangelista & Co
 from app.config.custom_css import get_custom_css
+from app.utils.error_handler import show_db_error
 # ──────────────────────────────────────────────────────────────
 
 # ==============================================================================
@@ -463,7 +464,7 @@ with tab1:
                             )
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            show_db_error(e, "DB-ERR")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Listar ────────────────────────────────────────────────────────────────
@@ -531,7 +532,7 @@ with tab1:
                         st.success("✅ Actualizado.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        show_db_error(e, "DB-ERR")
                 if s2.form_submit_button("Cancelar"):
                     st.session_state.pop(f"edit_c_{cid}", None)
                     st.rerun()
@@ -548,7 +549,7 @@ with tab1:
                     st.success("✅ Eliminado.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    show_db_error(e, "DB-ERR")
             if d2.button("❌ Cancelar", key=f"no_c_{cid}"):
                 st.session_state.pop(f"del_c_{cid}", None)
                 st.rerun()
@@ -611,14 +612,31 @@ with tab2:
                 else:
                     try:
                         # 1️⃣ Insertar en saas_clientes y recuperar UUID
-                        res_cli = supabase.table("saas_clientes").insert({
+                        # NOTA: columnas opcionales 'contacto' y 'email_contacto' requieren:
+                        #   ALTER TABLE saas_clientes ADD COLUMN contacto TEXT;
+                        #   ALTER TABLE saas_clientes ADD COLUMN email_contacto TEXT;
+                        # Si no existen, se omiten del insert (datos se conservan en saas_users).
+                        _payload_cli: dict = {
                             "nombre_comercial": n_nc.strip(),
                             "rfc":              n_rfc.strip().upper(),
                             "industria":        n_ind,
-                            "contacto":         n_contact.strip(),
-                            "email_contacto":   n_email_c.strip().lower(),
                             "estatus":          "Activo",
-                        }).execute()
+                        }
+                        if n_contact.strip():
+                            _payload_cli["contacto"] = n_contact.strip()
+                        if n_email_c.strip():
+                            _payload_cli["email_contacto"] = n_email_c.strip().lower()
+
+                        try:
+                            res_cli = supabase.table("saas_clientes").insert(_payload_cli).execute()
+                        except Exception as _e_full:
+                            # Si fallan columnas opcionales, reintentar sin ellas
+                            if "contacto" in str(_e_full) or "email_contacto" in str(_e_full):
+                                _payload_cli.pop("contacto", None)
+                                _payload_cli.pop("email_contacto", None)
+                                res_cli = supabase.table("saas_clientes").insert(_payload_cli).execute()
+                            else:
+                                raise
 
                         new_client_id = res_cli.data[0]["id"] if res_cli.data else None
 
@@ -639,7 +657,7 @@ with tab2:
                             st.success(f"✅ {n_nc} dado de alta (sin acceso de portal).")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        show_db_error(e, "DB-ERR")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Listar ────────────────────────────────────────────────────────────────
@@ -699,17 +717,28 @@ with tab2:
                 s1, s2  = st.columns(2)
                 if s1.form_submit_button("💾 Guardar"):
                     try:
-                        supabase.table("saas_clientes").update({
+                        _upd_cli: dict = {
                             "nombre_comercial": ed_nc.strip(),
                             "industria":        ed_ind,
-                            "contacto":         ed_cont.strip(),
-                            "email_contacto":   ed_eml.strip().lower(),
-                        }).eq("id", clid).execute()
+                        }
+                        if ed_cont.strip():
+                            _upd_cli["contacto"] = ed_cont.strip()
+                        if ed_eml.strip():
+                            _upd_cli["email_contacto"] = ed_eml.strip().lower()
+                        try:
+                            supabase.table("saas_clientes").update(_upd_cli).eq("id", clid).execute()
+                        except Exception as _e_upd:
+                            if "contacto" in str(_e_upd) or "email_contacto" in str(_e_upd):
+                                _upd_cli.pop("contacto", None)
+                                _upd_cli.pop("email_contacto", None)
+                                supabase.table("saas_clientes").update(_upd_cli).eq("id", clid).execute()
+                            else:
+                                raise
                         st.session_state.pop(f"edit_cl_{clid}", None)
                         st.success("✅ Actualizado.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        show_db_error(e, "CLI-002")
                 if s2.form_submit_button("Cancelar"):
                     st.session_state.pop(f"edit_cl_{clid}", None)
                     st.rerun()
@@ -733,7 +762,7 @@ with tab2:
                     st.success("✅ Cliente y asignaciones eliminados.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    show_db_error(e, "DB-ERR")
             if d2.button("❌ Cancelar", key=f"no_cl_{clid}"):
                 st.session_state.pop(f"del_cl_{clid}", None)
                 st.rerun()
@@ -783,7 +812,7 @@ with tab3:
                             st.success("✅ Asignación creada.")
                             st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        show_db_error(e, "DB-ERR")
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.warning("Se necesita al menos 1 consultor y 1 cliente activos.")
@@ -855,7 +884,7 @@ with tab3:
                                 st.success("✅ Reasignado.")
                                 st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            show_db_error(e, "DB-ERR")
                 if s2.form_submit_button("Cancelar"):
                     st.session_state.pop(f"edit_a_{aid}", None)
                     st.rerun()
@@ -870,7 +899,7 @@ with tab3:
                     st.success("✅ Asignación eliminada.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    show_db_error(e, "DB-ERR")
             if d2.button("❌ Cancelar", key=f"no_a_{aid}"):
                 st.session_state.pop(f"del_a_{aid}", None)
                 st.rerun()
@@ -990,7 +1019,7 @@ with tab4:
                             st.success(f"✅ Credencial API guardada para {cliente_nc}.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            show_db_error(e, "DB-ERR")
 
             # ── CAMPOS SQL ────────────────────────────────────────────────────
             else:
@@ -1094,7 +1123,7 @@ with tab4:
                             st.success(f"✅ Credencial SQL guardada para {cliente_nc}.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            show_db_error(e, "DB-ERR")
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1125,12 +1154,24 @@ with tab4:
             cli_nm  = id_to_cli4.get(cr.get("cliente_id"), "—")
             icono   = "🌐" if metodo_cr == "api_rest" else "🗄️"
 
+            def _mask_host(host: str) -> str:
+                """Enmascara host mostrando solo los primeros 4 chars."""
+                if not host or host == "—":
+                    return "—"
+                return host[:4] + "****" if len(host) > 4 else "****"
+
             if metodo_cr == "api_rest":
-                detalle = cr.get("api_endpoint", "—")
-                sub     = AUTH_METHODS.get(cr.get("api_auth_method", ""), cr.get("api_auth_method", ""))
+                from urllib.parse import urlparse as _urlparse
+                _ep = cr.get("api_endpoint", "")
+                try:
+                    _p = _urlparse(_ep)
+                    detalle = f"{_p.scheme}://{_p.netloc}/****" if _p.netloc else "****"
+                except Exception:
+                    detalle = "****"
+                sub = AUTH_METHODS.get(cr.get("api_auth_method", ""), cr.get("api_auth_method", ""))
             else:
-                db_t  = cr.get("db_type", "")
-                detalle = f"{cr.get('db_host','—')}:{cr.get('db_port','—')} / {cr.get('db_nombre','—')}"
+                db_t    = cr.get("db_type", "")
+                detalle = f"{_mask_host(cr.get('db_host','—'))}:{cr.get('db_port','—')} / {cr.get('db_nombre','—')}"
                 sub     = DB_LABELS.get(db_t, db_t)
 
             col_info, col_edit, col_del = st.columns([5, 1, 1])
@@ -1138,6 +1179,21 @@ with tab4:
                 f"{icono} **{cli_nm}** · `{metodo_cr.replace('_',' ').upper()}`  \n"
                 f"`{detalle}` · {sub}"
             )
+
+            # Detalle completo solo para Admin
+            if st.session_state.get("role") == "Admin":
+                with st.expander("🔓 Ver credencial completa (solo Admin)"):
+                    if metodo_cr == "api_rest":
+                        st.code(cr.get("api_endpoint", ""), language="text")
+                        st.caption("⚠️ No compartas esta URL fuera del equipo técnico.")
+                    else:
+                        st.json({
+                            "host":     cr.get("db_host"),
+                            "port":     cr.get("db_port"),
+                            "database": cr.get("db_nombre"),
+                            "usuario":  cr.get("db_usuario"),
+                        })
+                        st.caption("⚠️ La contraseña está encriptada y no se muestra.")
 
             if col_edit.button("✏️", key=f"e_cr_{crid}", help="Editar"):
                 st.session_state[f"edit_cr_{crid}"] = not st.session_state.get(f"edit_cr_{crid}", False)
@@ -1178,7 +1234,7 @@ with tab4:
                                     st.success("✅ Actualizado.")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Error: {e}")
+                                    show_db_error(e, "DB-ERR")
                         if s2.form_submit_button("Cancelar"):
                             st.session_state.pop(f"edit_cr_{crid}", None)
                             st.rerun()
@@ -1215,7 +1271,7 @@ with tab4:
                                 st.success("✅ Actualizado.")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Error: {e}")
+                                show_db_error(e, "DB-ERR")
                         if s2.form_submit_button("Cancelar"):
                             st.session_state.pop(f"edit_cr_{crid}", None)
                             st.rerun()
@@ -1231,7 +1287,7 @@ with tab4:
                         st.success("✅ Credencial eliminada.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        show_db_error(e, "DB-ERR")
                 if d2.button("❌ Cancelar", key=f"no_cr_{crid}"):
                     st.session_state.pop(f"del_cr_{crid}", None)
                     st.rerun()

@@ -430,13 +430,33 @@ Prob. crisis > 30%  →  Activar Escudo 3 (Bisturí) de inmediato
         stress = pipeline_results.get('stress_results', {})
         prob   = stress.get('probabilidad_crisis', 0)
         mes_c  = stress.get('mes_critico')
+        stats  = pipeline_results.get('statistics', {})
+        prob_loss = stats.get('prob_loss', 0)
+        p50       = stats.get('p50', 0)
 
-        if prob > 0.30:
-            st.error(f"🔴 **ALERTA DE CRISIS** — Probabilidad: {prob:.1%} | Mes crítico: {mes_c}")
-        elif prob > 0.15:
-            st.warning(f"🟡 **PRECAUCIÓN** — Probabilidad de crisis: {prob:.1%}")
+        # Semáforo integrado: combina prob_crisis (liquidez) + prob_loss (utilidad neta)
+        # Un negocio NO puede estar "saludable" si la mayoría de escenarios son pérdida
+        crisis_liquidez  = prob > 0.30
+        crisis_utilidad  = prob_loss > 0.70
+        alerta_liquidez  = prob > 0.15
+        alerta_utilidad  = prob_loss > 0.40 or p50 < 0
+
+        if crisis_liquidez or crisis_utilidad:
+            razon = []
+            if crisis_liquidez:
+                razon.append(f"Crisis liquidez: {prob:.1%}")
+            if crisis_utilidad:
+                razon.append(f"Pérdida neta: {prob_loss:.1%}")
+            st.error(f"🔴 **ALERTA DE CRISIS** — {' | '.join(razon)}")
+        elif alerta_liquidez or alerta_utilidad:
+            razon = []
+            if alerta_liquidez:
+                razon.append(f"Liquidez: {prob:.1%}")
+            if alerta_utilidad:
+                razon.append(f"P50 utilidad: ${p50:,.0f}")
+            st.warning(f"🟡 **PRECAUCIÓN** — {' | '.join(razon)}")
         else:
-            st.success(f"🟢 **SITUACIÓN SALUDABLE** — Probabilidad de crisis: {prob:.1%}")
+            st.success(f"🟢 **SITUACIÓN SALUDABLE** — Crisis liquidez: {prob:.1%} | P50: ${p50:,.0f}")
 
         semaforo = stress.get('semaforo', {})
         if semaforo:
@@ -450,14 +470,31 @@ Prob. crisis > 30%  →  Activar Escudo 3 (Bisturí) de inmediato
                 with cols[mes - 1]:
                     st.metric(f"M{mes}", f"{emoji}", f"{prob_m:.0%}")
 
-        # Métricas rápidas
+        # Métricas rápidas — labels explícitos sobre qué mide cada indicador
         st.markdown("---")
         col1, col2, col3, col4 = st.columns(4)
-        stats = pipeline_results.get('statistics', {})
-        col1.metric("P50 Monte Carlo", f"${stats.get('p50', 0):,.0f}")
-        col2.metric("Prob. Pérdida",   f"{stats.get('prob_loss', 0):.1%}", delta_color="inverse")
-        col3.metric("Prob. Crisis",    f"{prob:.1%}", delta_color="inverse")
-        col4.metric("Mes Crítico",     f"Mes {mes_c}" if mes_c else "Ninguno")
+        col1.metric(
+            "P50 Utilidad Neta",
+            f"${p50:,.0f}",
+            help="Mediana de 10,000 simulaciones de utilidad neta acumulada al cierre del horizonte."
+        )
+        col2.metric(
+            "Prob. Pérdida Neta",
+            f"{prob_loss:.1%}",
+            delta_color="inverse",
+            help="% de escenarios donde la utilidad neta acumulada es negativa."
+        )
+        col3.metric(
+            "Prob. Crisis Liquidez",
+            f"{prob:.1%}",
+            delta_color="inverse",
+            help="% de escenarios donde algún mes la caja disponible cae a $0 (crisis de liquidez mensual)."
+        )
+        col4.metric(
+            "Mes Crítico",
+            f"Mes {mes_c}" if mes_c is not None else "Sin mes crítico",
+            help="Primer mes donde la probabilidad de caja = $0 supera el umbral rojo."
+        )
 
     # ── TAB 2: ESCUDO 1 ──────────────────────────────────────────────────────
     with tab_escudo1:
@@ -629,8 +666,9 @@ P10 caja < -$1M               →  Gestionar línea de crédito preventiva HOY
             st.warning("Escudo 2 no disponible.")
         else:
             col1, col2, col3 = st.columns(3)
+            _mes_c2 = stress.get('mes_critico')
             col1.metric("Prob. Quiebra Liquidez", f"{stress.get('probabilidad_crisis', 0):.1%}")
-            col2.metric("Mes Crítico", f"Mes {stress.get('mes_critico', 'N/A')}")
+            col2.metric("Mes Crítico", f"Mes {_mes_c2}" if _mes_c2 is not None else "Sin mes crítico")
             dp = stress.get('default_probability', {})
             col3.metric("Prob. Default Clientes", f"{dp.get('prob_default_media', 0):.1%}")
 
@@ -720,7 +758,8 @@ Semana 4:  Medir resultado: ¿caja proyectada ≥ $0 en mes crítico?
             col1, col2, col3 = st.columns(3)
             col1.metric("Capital Total a Liberar", f"${opt.get('capital_total_liberado', 0):,.0f} MXN")
             col2.metric("ROI del Plan", f"{opt.get('roi_estimado', 0)}x")
-            col3.metric("Mes Crítico", f"Mes {opt.get('mes_critico', 'N/A')}")
+            _mes_c3 = opt.get('mes_critico')
+            col3.metric("Mes Crítico", f"Mes {_mes_c3}" if _mes_c3 is not None else "Sin mes crítico")
 
             st.markdown(f"**Evento Detonante:** {opt.get('evento_detonante', 'N/A')}")
             st.markdown("---")
